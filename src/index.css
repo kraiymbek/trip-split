@@ -1,0 +1,18 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: light;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  overscroll-behavior-y: none;
+}
+
+input[type='date'] {
+  -webkit-appearance: none;
+  appearance: none;
+}
