@@ -15,6 +15,7 @@ export interface TripData {
   loading: boolean
   error: string | null
   offline: boolean
+  notFound: boolean // поездки нет или нет доступа (а не просто нет сети)
   reload: () => Promise<void>
 }
 
@@ -27,6 +28,7 @@ export function useTripData(tripId: string | undefined): TripData {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [offline, setOffline] = useState(false)
+  const [notFound, setNotFound] = useState(false)
   const loaded = useRef(false)
 
   const reload = useCallback(async () => {
@@ -50,6 +52,7 @@ export function useTripData(tripId: string | undefined): TripData {
     if (t.error?.code === 'PGRST116') {
       // строки нет: поездку удалили, ты из неё вышел или ссылка чужая
       setTrip(null)
+      setNotFound(true)
       setError('Поездка не найдена или у тебя нет к ней доступа')
       setOffline(false)
     } else if (firstErr) {
@@ -74,6 +77,7 @@ export function useTripData(tripId: string | undefined): TripData {
       }
     } else {
       loaded.current = true
+      setNotFound(false)
       setOffline(false)
       setError(null)
       setTrip(t.data as Trip)
@@ -111,6 +115,7 @@ export function useTripData(tripId: string | undefined): TripData {
   useEffect(() => {
     if (!tripId) return
     loaded.current = false
+    setNotFound(false) // флаг относится к прошлой поездке
     setLoading(true)
     reload()
 
@@ -154,5 +159,5 @@ export function useTripData(tripId: string | undefined): TripData {
 
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members])
 
-  return { trip, members, memberById, expenses, settlements, cashOps, loading, error, offline, reload }
+  return { trip, members, memberById, expenses, settlements, cashOps, loading, error, offline, notFound, reload }
 }

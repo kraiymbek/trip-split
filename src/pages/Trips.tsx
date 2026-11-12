@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { ChevronRight, LogOut, Luggage, Plane, Plus } from 'lucide-react'
+import { ChevronRight, LogOut, Luggage, Pin, Plane, Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button as UiButton } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { getHomeTrip, setHomeTrip, takeAutoOpen } from '../lib/homeTrip'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { errMsg, supabase } from '../lib/supabase'
@@ -9,7 +12,7 @@ import type { Trip } from '../types'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, Spinner, inputCls } from '../components/ui'
 
 export default function Trips() {
-  const { profile } = useAuth()
+  const { profile, session } = useAuth()
   const nav = useNavigate()
   const [trips, setTrips] = useState<Trip[] | null>(null)
   const [creating, setCreating] = useState(false)
@@ -17,6 +20,25 @@ export default function Trips() {
   const [base, setBase] = useState('THB')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
+  const me = session?.user.id ?? ''
+  const [home, setHome] = useState(() => (me ? getHomeTrip(me) : null))
+
+  // запуск приложения: сразу в отмеченную поездку (не дожидаясь списка — работает и без сети)
+  useEffect(() => {
+    if (!me) return
+    const id = takeAutoOpen(me)
+    if (id) nav(`/t/${id}`)
+  }, [me, nav])
+
+  function togglePin(t: Trip) {
+    if (!me) return
+    const next = home === t.id ? null : t.id
+    setHomeTrip(me, next)
+    setHome(next)
+    toast(next ? `«${t.name}» будет открываться при запуске` : 'Отметка снята — при запуске откроется список', {
+      id: 'home-trip',
+    })
+  }
 
   useEffect(() => {
     supabase
@@ -64,22 +86,47 @@ export default function Trips() {
         <Spinner full />
       ) : (
         <div className="space-y-3">
-          {trips.map((t) => (
-            <Link key={t.id} to={`/t/${t.id}`} className="block">
-              <Card className="flex items-center gap-3 transition-colors hover:bg-accent/40 active:bg-muted">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
-                  <Plane className="size-5" aria-hidden />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate font-semibold">{t.name}</div>
-                  <div className="text-sm text-muted-foreground">
-                    Итог в {CURRENCIES[t.base_currency]?.flag} {t.base_currency}
+          {trips.map((t) => {
+            const pinned = home === t.id
+            return (
+              <Card
+                key={t.id}
+                className={`flex items-center gap-1 !p-0 transition-colors hover:bg-accent/40 ${pinned ? 'border-primary/40' : ''}`}
+              >
+                <Link to={`/t/${t.id}`} className="flex min-w-0 flex-1 items-center gap-3 py-4 pl-4 active:opacity-70">
+                  <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                    <Plane className="size-5" aria-hidden />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold">{t.name}</div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                      <span>
+                        Итог в {CURRENCIES[t.base_currency]?.flag} {t.base_currency}
+                      </span>
+                      {pinned && (
+                        <Badge variant="secondary" className="font-medium">
+                          Открывается при запуске
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <ChevronRight className="size-5 text-muted-foreground" aria-hidden />
+                  <ChevronRight className="size-5 shrink-0 text-muted-foreground" aria-hidden />
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => togglePin(t)}
+                  aria-pressed={pinned}
+                  aria-label={`Открывать «${t.name}» при запуске`}
+                  title={pinned ? 'Открывается при запуске — нажми, чтобы снять' : 'Открывать при запуске'}
+                  className={`mr-2 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 ${
+                    pinned ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                  }`}
+                >
+                  <Pin className={`size-5 ${pinned ? 'fill-current' : ''}`} aria-hidden />
+                </button>
               </Card>
-            </Link>
-          ))}
+            )
+          })}
           {trips.length === 0 && !creating && (
             <div className="flex flex-col items-center gap-3 py-8 text-center text-muted-foreground">
               <span className="flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">

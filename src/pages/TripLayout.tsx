@@ -1,5 +1,6 @@
 import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { useNotices } from '../hooks/useNotices'
+import { getHomeTrip, setHomeTrip } from '../lib/homeTrip'
 import { useAuth } from '../auth'
 import { useTripData, type TripData } from '../hooks/useTrip'
 import { useEffect, useMemo, useState } from 'react'
@@ -71,6 +72,11 @@ export default function TripLayout() {
       nav(`${tripPath}/e/${expenseId}`)
     } else setShowNews(true)
   }
+
+  // отмеченная «при запуске» поездка удалена или ты из неё вышел — снимаем отметку, чтобы не открывать её каждый раз
+  useEffect(() => {
+    if (raw.notFound && me && tripId && getHomeTrip(me) === tripId) setHomeTrip(me, null)
+  }, [raw.notFound, me, tripId])
 
   // свежие уведомления — всплывашкой (sonner), список целиком — в шторке по колокольчику
   useEffect(() => {
