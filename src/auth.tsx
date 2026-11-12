@@ -24,15 +24,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = useCallback(async (uid: string | undefined) => {
     if (!uid) return setProfile(null)
+    // сначала из кеша на телефоне — имя видно сразу и без сети, потом свежее с сервера
+    const cached = readCachedProfile(uid)
+    if (cached) setProfile(cached)
     const { data } = await supabase.from('profiles').select('id,name,avatar_color').eq('id', uid).single()
-    setProfile(data)
+    if (data) {
+      setProfile(data)
+      writeCachedProfile(data)
+    }
   }, [])
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data }) => {
+    // сессия хранится локально — вход известен сразу, приложение не ждёт сеть ради профиля
+    supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
-      await loadProfile(data.session?.user.id)
       setLoading(false)
+      loadProfile(data.session?.user.id)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
       setSession(s)
@@ -50,3 +57,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 
 export const useAuth = () => useContext(AuthContext)
+
+const PROFILE_KEY = 'ts:profile'
+
+function readCachedProfile(uid: string): Profile | null {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROFILE_KEY) ?? 'null') as Profile | null
+    return p?.id === uid ? p : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(p: Profile) {
+  try {
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(p))
+  } catch {
+    /* private mode */
+  }
+}

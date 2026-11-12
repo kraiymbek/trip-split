@@ -300,7 +300,11 @@ export default function ExpenseForm() {
                 onChange={(e) => setRateStr(e.target.value)}
               />
               <span className="text-muted-foreground">{base}</span>
-              {rateState === 'loading' && <span className="text-xs text-muted-foreground">курс…</span>}
+              {rateState === 'loading' && (
+                <span className="flex items-center gap-1 text-xs text-muted-foreground" role="status">
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden /> курс
+                </span>
+              )}
             </div>
             {rateState === 'failed' && (
               <div className="mt-1 text-xs text-amber-700">Не удалось загрузить курс — введи вручную</div>

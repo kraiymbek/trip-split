@@ -9,7 +9,8 @@ import { useAuth } from '../auth'
 import { errMsg, supabase } from '../lib/supabase'
 import { CURRENCIES } from '../lib/money'
 import type { Trip } from '../types'
-import { Avatar, Button, Card, Chip, ErrorBox, Label, Spinner, inputCls } from '../components/ui'
+import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
+import { TripsSkeleton } from '../components/Loading'
 
 export default function Trips() {
   const { profile, session } = useAuth()
@@ -83,7 +84,7 @@ export default function Trips() {
       </header>
 
       {trips === null ? (
-        <Spinner full />
+        <TripsSkeleton />
       ) : (
         <div className="space-y-3">
           {trips.map((t) => {

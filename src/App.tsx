@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import { supabaseConfigured } from './lib/supabase'
-import { Spinner } from './components/ui'
+import { AppSplash } from './components/Loading'
 import { Toaster } from '@/components/ui/sonner'
 import Auth from './pages/Auth'
 import Trips from './pages/Trips'
@@ -17,7 +17,7 @@ import TripSettings from './pages/TripSettings'
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
   const loc = useLocation()
-  if (loading) return <Spinner full />
+  if (loading) return <AppSplash />
   if (!session) return <Navigate to={`/login?next=${encodeURIComponent(loc.pathname)}`} replace />
   return children
 }

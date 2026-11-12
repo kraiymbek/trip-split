@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTripCtx } from './TripLayout'
 import { useAuth } from '../auth'
@@ -18,6 +18,10 @@ export default function TripSettings() {
   const nav = useNavigate()
   const [tripName, setTripName] = useState(trip.name)
   const [myName, setMyName] = useState(profile?.name ?? '')
+  // профиль подгружается фоном — подставим имя, когда придёт (если человек ещё ничего не ввёл)
+  useEffect(() => {
+    if (profile?.name) setMyName((v) => v || profile.name)
+  }, [profile?.name])
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState('')
   const [saved, setSaved] = useState('')

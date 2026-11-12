@@ -4,7 +4,8 @@ import { getHomeTrip, setHomeTrip } from '../lib/homeTrip'
 import { useAuth } from '../auth'
 import { useTripData, type TripData } from '../hooks/useTrip'
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Spinner } from '../components/ui'
+import { Button } from '../components/ui'
+import { TripSkeleton } from '../components/Loading'
 import { Button as UiButton } from '@/components/ui/button'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -97,7 +98,7 @@ export default function TripLayout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [news.toast])
 
-  if (data.loading && !data.trip) return <Spinner full />
+  if (data.loading && !data.trip) return <TripSkeleton />
   if (data.error || !data.trip)
     return (
       <div className="mx-auto max-w-md px-5 pt-24 text-center">

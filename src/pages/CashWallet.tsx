@@ -4,7 +4,7 @@ import { computeWallet } from '../lib/balance'
 import { CURRENCIES, QUICK_CURRENCIES, formatMoney, moneyError, parseMoney } from '../lib/money'
 import { errMsg, supabase } from '../lib/supabase'
 import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
-import { ArrowLeftRight, Banknote, Clock, HandCoins, Luggage, Receipt, Trash2, type LucideIcon } from 'lucide-react'
+import { ArrowLeftRight, Banknote, Check, Loader2, Clock, HandCoins, Luggage, Receipt, Trash2, type LucideIcon } from 'lucide-react'
 import { Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -400,7 +400,8 @@ function OpForm({ kind, tripId, onDone }: { kind: 'exchange' | 'deposit'; tripId
         </div>
         <ErrorBox>{error}</ErrorBox>
         <Button className="w-full" disabled={busy}>
-          {busy ? '…' : 'Сохранить'}
+          {busy ? <Loader2 className="animate-spin" /> : <Check />}
+          Сохранить
         </Button>
       </form>
     </Card>

@@ -56,6 +56,11 @@
   --color-negative: var(--negative);
 }
 
+@keyframes boot-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+
 @layer base {
   :root {
     color-scheme: light;
