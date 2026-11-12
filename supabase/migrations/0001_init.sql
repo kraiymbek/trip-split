@@ -190,6 +190,12 @@ create policy "cash insert" on public.cash_ops for insert to authenticated
   with check (user_id = auth.uid() and public.is_trip_member(trip_id));
 create policy "cash delete" on public.cash_ops for delete to authenticated using (user_id = auth.uid());
 
+-- права выдаём явно: в новых проектах Supabase таблицы больше не открываются для API автоматически.
+-- Что именно можно делать, всё равно решают RLS-политики выше; anon (без входа) к данным доступа не имеет.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+revoke all on all tables in schema public from anon;
+
 -- менять можно только безопасные колонки (не invite_code / created_by / id)
 revoke update on public.trips, public.profiles, public.cash_ops from authenticated, anon;
 grant update (name, base_currency) on public.trips to authenticated;
