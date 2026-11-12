@@ -11,17 +11,20 @@ import { CURRENCIES } from '../lib/money'
 import type { Trip } from '../types'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 import { TripsSkeleton } from '../components/Loading'
+import { Skeleton } from '@/components/ui/skeleton'
+import { readCachedTrips, writeCachedTrips } from '../lib/tripsCache'
 
 export default function Trips() {
   const { profile, session } = useAuth()
   const nav = useNavigate()
-  const [trips, setTrips] = useState<Trip[] | null>(null)
+  const me = session?.user.id ?? ''
+  // из кеша — сразу, без скелетона и скачка раскладки; свежий список подтянется фоном
+  const [trips, setTrips] = useState<Trip[] | null>(() => readCachedTrips(me))
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('Таиланд 🇹🇭')
   const [base, setBase] = useState('THB')
   const [code, setCode] = useState('')
   const [error, setError] = useState('')
-  const me = session?.user.id ?? ''
   const [home, setHome] = useState(() => (me ? getHomeTrip(me) : null))
 
   // запуск приложения: сразу в отмеченную поездку (не дожидаясь списка — работает и без сети)
@@ -47,10 +50,16 @@ export default function Trips() {
       .select('*')
       .order('created_at', { ascending: false })
       .then(({ data, error }) => {
-        if (error) setError(errMsg(error))
-        setTrips((data as Trip[]) ?? [])
+        if (error) {
+          setError(errMsg(error))
+          setTrips((prev) => prev ?? []) // без сети остаёмся на кеше
+          return
+        }
+        const list = (data as Trip[]) ?? []
+        setTrips(list)
+        writeCachedTrips(me, list)
       })
-  }, [])
+  }, [me])
 
   async function create(e: FormEvent) {
     e.preventDefault()
@@ -78,7 +87,11 @@ export default function Trips() {
       <header className="mb-6 flex items-center justify-between">
         <h1 className="text-3xl font-bold tracking-tight">Поездки</h1>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">{profile?.name}</span>
+          {profile ? (
+            <span className="text-sm text-muted-foreground">{profile.name}</span>
+          ) : (
+            <Skeleton className="h-4 w-16" />
+          )}
           <Avatar p={profile ?? undefined} />
         </div>
       </header>

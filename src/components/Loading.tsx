@@ -42,21 +42,29 @@ export function AppSplash({ text }: { text?: string }) {
   )
 }
 
-/** Список поездок */
-export function TripsSkeleton() {
+/** Список поездок: та же раскладка, что у карточки в Trips.tsx (высота строки 1:1).
+ *  Место занимает сразу, а проявляется с задержкой — при быстрой загрузке не мигает и не прыгает. */
+export function TripsSkeleton({ count = 2 }: { count?: number }) {
   const show = useDelayed(150)
-  if (!show) return <div className="h-40" />
   return (
     <Busy label="Загружаем поездки">
-      <div className="space-y-3">
-        {[0, 1].map((i) => (
-          <div key={i} className="flex items-center gap-3 rounded-2xl border bg-card p-4 shadow-xs">
-            <Skeleton className="size-11 rounded-xl" />
-            <div className="flex-1 space-y-2">
-              <Skeleton className="h-4 w-2/5" />
-              <Skeleton className="h-3.5 w-1/4" />
+      <div className={`space-y-3 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0'}`}>
+        {Array.from({ length: count }, (_, i) => (
+          <div key={i} className="flex items-center gap-1 rounded-2xl border bg-card shadow-xs">
+            <div className="flex min-w-0 flex-1 items-center gap-3 py-4 pl-4">
+              <Skeleton className="size-11 shrink-0 rounded-xl" />
+              <div className="min-w-0 flex-1">
+                {/* высоты строк = line-height текста: 24px название, 20px подпись */}
+                <div className="flex h-6 items-center">
+                  <Skeleton className="h-4 w-2/5" />
+                </div>
+                <div className="flex h-5 items-center">
+                  <Skeleton className="h-3.5 w-1/4" />
+                </div>
+              </div>
+              <Skeleton className="size-5 shrink-0 rounded" />
             </div>
-            <Skeleton className="size-9 rounded-full" />
+            <Skeleton className="mr-2 size-11 shrink-0 rounded-full" />
           </div>
         ))}
       </div>
