@@ -2,8 +2,15 @@ import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 
 import { useNotices } from '../hooks/useNotices'
 import { useAuth } from '../auth'
 import { useTripData, type TripData } from '../hooks/useTrip'
-import { useMemo, useState } from 'react'
-import { Spinner } from '../components/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Spinner } from '../components/ui'
+import { Button as UiButton } from '@/components/ui/button'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { toast } from 'sonner'
+import {
+  Bell, CheckCheck, ChevronLeft, CloudUpload, HandCoins, Pencil, Receipt, RefreshCw, Scale, Settings, Trash2, Wallet, WifiOff,
+} from 'lucide-react'
 import type { CashOp, Expense, Settlement, Trip } from '../types'
 import { discard, flushOutbox, retry, useOutbox, type OutboxItem } from '../lib/outbox'
 
@@ -57,15 +64,41 @@ export default function TripLayout() {
   const [showNews, setShowNews] = useState(false)
   const news = useNotices(data, me, tripId)
   const nav = useNavigate()
+  const tripPath = `/t/${tripId}`
+  const openNotice = (expenseId?: string) => {
+    if (expenseId) {
+      setShowNews(false)
+      nav(`${tripPath}/e/${expenseId}`)
+    } else setShowNews(true)
+  }
+
+  // свежие уведомления — всплывашкой (sonner), список целиком — в шторке по колокольчику
+  useEffect(() => {
+    const fresh = news.toast
+    if (!fresh.length) return
+    if (fresh.length === 1) {
+      const n = fresh[0]
+      toast(n.title, {
+        id: n.key,
+        description: n.body,
+        action: n.expenseId ? { label: 'Открыть', onClick: () => openNotice(n.expenseId) } : undefined,
+      })
+    } else {
+      toast(`Новых записей для тебя: ${fresh.length}`, { action: { label: 'Смотреть', onClick: () => setShowNews(true) } })
+    }
+    news.dismissToast()
+    // openNotice зависит только от setState/nav/tripId — пересоздавать эффект из-за него не нужно
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [news.toast])
 
   if (data.loading && !data.trip) return <Spinner full />
   if (data.error || !data.trip)
     return (
       <div className="mx-auto max-w-md px-5 pt-24 text-center">
-        <p className="mb-6 text-slate-600">{data.error ?? 'Поездка не найдена'}</p>
-        <Link to="/" className="font-semibold text-teal-700">
-          К списку поездок
-        </Link>
+        <p className="mb-6 text-muted-foreground">{data.error ?? 'Поездка не найдена'}</p>
+        <Button asChild variant="ghost">
+          <Link to="/">К списку поездок</Link>
+        </Button>
       </div>
     )
 
@@ -80,151 +113,175 @@ export default function TripLayout() {
     setShowNews(false)
     news.markAll()
   }
-  const openNotice = (expenseId?: string) => {
-    news.dismissToast()
-    if (expenseId) {
-      setShowNews(false)
-      nav(`/t/${data.trip!.id}/e/${expenseId}`)
-    } else setShowNews(true)
-  }
   const tab = ({ isActive }: { isActive: boolean }) =>
-    `flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium ${
-      isActive ? 'text-teal-700' : 'text-slate-400'
+    `flex min-h-14 flex-1 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-xs font-medium transition-colors ${
+      isActive ? 'text-primary' : 'text-muted-foreground'
     }`
 
   return (
-    <div className="mx-auto min-h-dvh max-w-md pb-[calc(env(safe-area-inset-bottom)+5rem)]">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-slate-50/90 px-4 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 backdrop-blur">
-        <Link to="/" className="-ml-2 px-2 text-2xl leading-none text-slate-400" aria-label="Назад">
-          ‹
-        </Link>
-        <h1 className="flex-1 truncate text-lg font-bold">{data.trip.name}</h1>
-        <button
-          className="relative -mr-1 rounded-full p-2 text-xl leading-none"
-          aria-label={`Новое: ${news.notices.length}`}
-          onClick={() => (showNews ? closeNews() : setShowNews(true))}
+    <div className="mx-auto min-h-dvh max-w-md pb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
+      <header className="sticky top-0 z-10 flex items-center gap-1 border-b border-transparent bg-background/85 px-2 pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 backdrop-blur-md">
+        <UiButton asChild variant="ghost" size="icon" aria-label="К списку поездок">
+          <Link to="/">
+            <ChevronLeft className="size-6" />
+          </Link>
+        </UiButton>
+        <h1 className="flex-1 truncate text-lg font-bold tracking-tight">{data.trip.name}</h1>
+        <UiButton
+          variant="ghost"
+          size="icon"
+          className="relative"
+          aria-label={news.notices.length ? `Новое для тебя: ${news.notices.length}` : 'Уведомления'}
+          onClick={() => {
+            toast.dismiss()
+            setShowNews(true)
+          }}
         >
-          🔔
+          <Bell className="size-5" />
           {news.notices.length > 0 && (
-            <span className="absolute top-0.5 right-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[11px] font-bold text-white">
+            <span className="absolute top-1.5 right-1.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-destructive px-1 text-[11px] font-bold text-white tabular">
               {news.notices.length > 99 ? '99+' : news.notices.length}
             </span>
           )}
-        </button>
+        </UiButton>
       </header>
 
-      {news.toast.length > 0 && !showNews && (
-        <button
-          className="fixed inset-x-3 top-[max(env(safe-area-inset-top),0.75rem)] z-30 mx-auto block max-w-md rounded-2xl bg-slate-900 px-4 py-3 text-left text-white shadow-xl"
-          onClick={() => openNotice(news.toast.length === 1 ? news.toast[0].expenseId : undefined)}
-        >
-          {news.toast.length === 1 ? (
-            <>
-              <div className="text-sm font-semibold">🔔 {news.toast[0].title}</div>
-              <div className="mt-0.5 truncate text-sm text-slate-300">{news.toast[0].body}</div>
-            </>
-          ) : (
-            <div className="text-sm font-semibold">
-              🔔 Новых записей для тебя: {news.toast.length}{' '}
-              <span className="font-normal text-slate-300">— посмотреть</span>
+      <Sheet
+        open={showNews}
+        onOpenChange={(o) => {
+          if (o) {
+            toast.dismiss() // всплывашки дублируют список и под модальной шторкой не нажимаются
+            setShowNews(true)
+          } else closeNews()
+        }}
+      >
+        <SheetContent side="bottom" className="max-h-[80dvh] rounded-t-3xl pb-[max(env(safe-area-inset-bottom),1rem)]">
+          <SheetHeader className="text-left">
+            <SheetTitle>Что нового для тебя</SheetTitle>
+            <SheetDescription>Расходы и возвраты, которые добавили или изменили другие</SheetDescription>
+          </SheetHeader>
+          <div className="overflow-y-auto px-4">
+            {news.notices.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-8 text-center text-muted-foreground">
+                <CheckCheck className="size-8 text-primary" aria-hidden />
+                Ничего нового — всё просмотрено
+              </div>
+            ) : (
+              <ul className="divide-y">
+                {news.notices.map((n) => {
+                  const Icon = n.kind === 'settle' ? HandCoins : n.kind === 'edit' ? Pencil : Receipt
+                  return (
+                    <li key={n.key}>
+                      <button
+                        className="flex w-full cursor-pointer gap-3 py-3 text-left disabled:cursor-default"
+                        disabled={!n.expenseId}
+                        onClick={() => openNotice(n.expenseId)}
+                      >
+                        <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                          <Icon className="size-4" aria-hidden />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block font-medium">{n.title}</span>
+                          <span className="block text-sm text-muted-foreground">{n.body}</span>
+                        </span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </div>
+          {news.notices.length > 0 && (
+            <div className="px-4">
+              <Button className="w-full" onClick={closeNews}>
+                Отметить всё прочитанным
+              </Button>
             </div>
           )}
-        </button>
-      )}
+        </SheetContent>
+      </Sheet>
 
-      {showNews && (
-        <div className="mx-4 mb-3 rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200">
-          <div className="mb-1 flex items-center justify-between">
-            <b>Что нового для тебя</b>
-            <button className="text-xs font-semibold text-teal-700" onClick={closeNews}>
-              {news.notices.length ? 'Прочитано' : 'Закрыть'}
-            </button>
-          </div>
-          {news.notices.length === 0 && <div className="py-2 text-slate-500">Ничего нового — всё просмотрено ✨</div>}
-          <div className="divide-y divide-slate-100">
-            {news.notices.map((n) => (
-              <button
-                key={n.key}
-                className="block w-full py-2 text-left disabled:cursor-default"
-                disabled={!n.expenseId}
-                onClick={() => openNotice(n.expenseId)}
-              >
-                <div className="font-medium">
-                  {n.kind === 'settle' ? '🤝' : n.kind === 'edit' ? '✏️' : '🧾'} {n.title}
-                </div>
-                <div className="text-slate-500">{n.body}</div>
+      <div className="space-y-2 px-4 empty:hidden">
+        {data.offline && (
+          <Alert>
+            <WifiOff />
+            <AlertDescription>Нет связи с сервером — показаны последние загруженные данные</AlertDescription>
+          </Alert>
+        )}
+
+        {pending.length > 0 && (
+          <Alert className="border-sky-200 bg-sky-50 text-sky-950">
+            <CloudUpload />
+            <AlertTitle className="flex items-center justify-between gap-2">
+              <span>
+                {pending.length} {pending.length === 1 ? 'запись ждёт' : 'записи ждут'} отправки
+                {pending.some((i) => i.error) && <span className="text-destructive"> · есть ошибка</span>}
+              </span>
+              <button className="-my-2 min-h-11 cursor-pointer px-1 text-sm font-semibold text-sky-800 underline underline-offset-2" aria-expanded={showPending} onClick={() => setShowPending((v) => !v)}>
+                {showPending ? 'скрыть' : 'показать'}
               </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {data.offline && (
-        <div className="mx-4 mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          Нет связи с сервером — показаны последние загруженные данные
-        </div>
-      )}
-
-      {pending.length > 0 && (
-        <div className="mx-4 mb-3 rounded-xl bg-sky-50 px-3 py-2 text-sm text-sky-900">
-          <button className="flex w-full items-center justify-between" onClick={() => setShowPending((v) => !v)}>
-            <span>
-              ⏳ {pending.length} {pending.length === 1 ? 'запись ждёт' : 'записи ждут'} отправки
-              {pending.some((i) => i.error) && <b className="text-rose-700"> · есть ошибка</b>}
-            </span>
-            <span className="text-sky-700 underline">{showPending ? 'скрыть' : 'показать'}</span>
-          </button>
-          {showPending && (
-            <div className="mt-2 space-y-2">
-              {pending.map((i) => (
-                <div key={i.id} className="rounded-lg bg-white px-3 py-2">
-                  <div className="font-medium">{i.label}</div>
-                  {i.error ? (
-                    <div className="mt-0.5 text-xs text-rose-700">Сервер не принял: {i.error}</div>
-                  ) : (
-                    <div className="mt-0.5 text-xs text-slate-500">Отправится само, когда появится интернет</div>
-                  )}
-                  <div className="mt-1 flex gap-4 text-xs font-semibold">
-                    <button className="text-teal-700" onClick={() => retry(i.id)}>
-                      Отправить сейчас
-                    </button>
-                    <button
-                      className="text-rose-600"
-                      onClick={() => confirm('Удалить эту запись? Она не сохранится.') && discard(i.id)}
-                    >
-                      Удалить
-                    </button>
+            </AlertTitle>
+            {showPending && (
+              <AlertDescription className="mt-2 space-y-2">
+                {pending.map((i) => (
+                  <div key={i.id} className="w-full rounded-lg border bg-card px-3 py-2 text-foreground">
+                    <div className="font-medium">{i.label}</div>
+                    <div className={i.error ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
+                      {i.error ? `Сервер не принял: ${i.error}` : 'Отправится само, когда появится интернет'}
+                    </div>
+                    <div className="mt-1 flex gap-1">
+                      <UiButton variant="ghost" className="px-2 text-primary" onClick={() => retry(i.id)}>
+                        <RefreshCw /> Отправить
+                      </UiButton>
+                      <UiButton
+                        variant="ghost"
+                        className="px-2 text-destructive"
+                        onClick={() => confirm('Удалить эту запись? Она не сохранится.') && discard(i.id)}
+                      >
+                        <Trash2 /> Удалить
+                      </UiButton>
+                    </div>
                   </div>
-                </div>
-              ))}
-              <button className="text-xs font-semibold text-teal-700" onClick={() => flushOutbox()}>
-                Отправить всё
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+                ))}
+                <UiButton variant="outline" onClick={() => flushOutbox()}>
+                  Отправить всё
+                </UiButton>
+              </AlertDescription>
+            )}
+          </Alert>
+        )}
+      </div>
 
-      <main className="px-4">
+      <main className="px-4 pt-2">
         <Outlet context={ctx} />
       </main>
 
-      <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur">
+      <nav
+        aria-label="Разделы поездки"
+        className="fixed inset-x-0 bottom-0 z-20 border-t bg-card/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md"
+      >
         <div className="mx-auto flex max-w-md">
-          <NavLink to="" end className={tab}>
-            <span className="text-xl">🧾</span>Расходы
-          </NavLink>
-          <NavLink to="cash" className={tab}>
-            <span className="text-xl">💵</span>Наличные
-          </NavLink>
-          <NavLink to="summary" className={tab}>
-            <span className="text-xl">⚖️</span>Итоги
-          </NavLink>
-          <NavLink to="settings" className={tab}>
-            <span className="text-xl">⚙️</span>Поездка
-          </NavLink>
+          {TABS.map(({ to, label, Icon, end }) => (
+            <NavLink key={label} to={to} end={end} className={tab}>
+              {({ isActive }) => (
+                <>
+                  <span className={`flex h-7 w-14 items-center justify-center rounded-full transition-colors ${isActive ? 'bg-accent' : ''}`}>
+                    <Icon className="size-5" strokeWidth={isActive ? 2.4 : 2} aria-hidden />
+                  </span>
+                  {label}
+                </>
+              )}
+            </NavLink>
+          ))}
         </div>
       </nav>
     </div>
   )
 }
+
+const TABS = [
+  { to: '', label: 'Расходы', Icon: Receipt, end: true },
+  { to: 'cash', label: 'Наличные', Icon: Wallet, end: false },
+  { to: 'summary', label: 'Итоги', Icon: Scale, end: false },
+  { to: 'settings', label: 'Поездка', Icon: Settings, end: false },
+]

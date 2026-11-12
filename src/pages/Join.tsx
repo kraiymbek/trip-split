@@ -22,8 +22,8 @@ export default function Join() {
   return (
     <div className="mx-auto max-w-md px-5 pt-24 text-center">
       <div className="mb-2 text-4xl">🤷</div>
-      <p className="mb-6 text-slate-600">{error}</p>
-      <Link to="/" className="font-semibold text-teal-700">
+      <p className="mb-6 text-muted-foreground">{error}</p>
+      <Link to="/" className="font-semibold text-primary">
         К списку поездок
       </Link>
     </div>

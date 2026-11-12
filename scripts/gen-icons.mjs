@@ -29,7 +29,7 @@ function inGlyph(x, y) {
 }
 
 function png(size) {
-  const bg = [13, 148, 136]
+  const bg = [4, 120, 87] // #047857 — основной цвет темы
   const ss = 4
   const raw = Buffer.alloc((size * 4 + 1) * size)
   for (let y = 0; y < size; y++) {

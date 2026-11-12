@@ -1,4 +1,9 @@
+import { Banknote, CreditCard } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { BANKS, METHODS, type PayMethod } from '../types'
+
+export const MethodIcon = ({ m, className }: { m: PayMethod; className?: string }) =>
+  m === 'card' ? <CreditCard className={className} aria-hidden /> : <Banknote className={className} aria-hidden />
 
 const KEY = 'ts:bank'
 
@@ -38,11 +43,13 @@ export function PayPicker({
             key={m.id}
             type="button"
             onClick={() => onChange(m.id, m.id === 'card' ? (bank ?? lastBank()) : null)}
-            className={`flex h-14 items-center justify-center gap-2 rounded-xl text-[15px] font-semibold transition ${
-              method === m.id ? 'bg-teal-600 text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'
-            }`}
+            aria-pressed={method === m.id}
+            className={cn(
+              'flex h-14 cursor-pointer items-center justify-center gap-2 rounded-xl border text-[15px] font-semibold transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+              method === m.id ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-foreground hover:bg-accent',
+            )}
           >
-            <span className="text-xl leading-none">{m.icon}</span>
+            <MethodIcon m={m.id} className="size-5" />
             {m.label}
           </button>
         ))}
@@ -62,9 +69,10 @@ export function PayPicker({
                   rememberBank(b.id)
                   onChange('card', b.id)
                 }}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition ${
-                  active ? 'text-white' : 'bg-white text-slate-700 ring-1 ring-slate-200'
-                }`}
+                className={cn(
+                  'flex h-10 cursor-pointer items-center gap-1.5 rounded-full border px-3.5 text-sm font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  active ? 'border-transparent text-white' : 'bg-card text-foreground hover:bg-accent',
+                )}
                 style={active ? { background: b.color } : undefined}
               >
                 {!active && <span className="h-2.5 w-2.5 rounded-full" style={{ background: b.color }} />}

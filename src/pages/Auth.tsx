@@ -2,7 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { LOGIN_RE, errMsg, loginToEmail, supabase } from '../lib/supabase'
-import { Button, ErrorBox, inputCls } from '../components/ui'
+import { Loader2 } from 'lucide-react'
+import { Button, Card, ErrorBox } from '../components/ui'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { InstallApp } from '../components/InstallApp'
 
 export default function Auth() {
@@ -50,65 +54,77 @@ export default function Auth() {
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-5 py-10">
       <div className="mb-8 text-center">
-        <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-2xl bg-teal-600 text-3xl text-white shadow-lg">
-          ฿
-        </div>
-        <h1 className="text-2xl font-bold">Trip Split</h1>
-        <p className="mt-1 text-slate-500">Кто кому сколько должен в поездке</p>
+        <img src="/icons/icon-192.png" alt="" className="mx-auto mb-4 size-16 rounded-2xl shadow-lg shadow-primary/20" />
+        <h1 className="text-3xl font-bold tracking-tight">Trip Split</h1>
+        <p className="mt-1.5 text-muted-foreground">Кто кому сколько должен в поездке</p>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 rounded-xl bg-slate-200/70 p-1">
-        {(['login', 'register'] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`rounded-lg py-2 text-sm font-semibold ${mode === m ? 'bg-white shadow-sm' : 'text-slate-500'}`}
-          >
-            {m === 'login' ? 'Вход' : 'Регистрация'}
-          </button>
-        ))}
-      </div>
+      <Card className="p-5">
+        <Tabs value={mode} onValueChange={(v) => setMode(v as 'login' | 'register')}>
+          <TabsList className="mb-3 grid h-11 w-full grid-cols-2">
+            <TabsTrigger value="login">Вход</TabsTrigger>
+            <TabsTrigger value="register">Регистрация</TabsTrigger>
+          </TabsList>
+          <TabsContent value={mode} forceMount>
+        <form onSubmit={submit} className="space-y-4" noValidate={false}>
+          {mode === 'register' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="name">Имя</Label>
+              <Input
+                id="name"
+                placeholder="Имя (видят друзья)"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoComplete="given-name"
+                maxLength={40}
+              />
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="login">Логин</Label>
+            <Input
+              id="login"
+              placeholder="Логин (латиницей)"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              autoComplete="username"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              maxLength={20}
+              required
+              aria-describedby={mode === 'register' ? 'login-help' : undefined}
+            />
+            {mode === 'register' && (
+              <p id="login-help" className="text-xs text-muted-foreground">
+                3–20 символов: латиница, цифры, точка, дефис
+              </p>
+            )}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Пароль</Label>
+            <Input
+              id="password"
+              type="password"
+              placeholder="Пароль (мин. 6 символов)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              minLength={6}
+              required
+            />
+          </div>
+          <ErrorBox>{error}</ErrorBox>
+          <Button className="w-full" disabled={busy}>
+            {busy && <Loader2 className="animate-spin" />}
+            {mode === 'login' ? 'Войти' : 'Создать аккаунт'}
+          </Button>
+        </form>
+          </TabsContent>
+        </Tabs>
+      </Card>
 
-      <form onSubmit={submit} className="space-y-3">
-        {mode === 'register' && (
-          <input
-            className={inputCls}
-            placeholder="Имя (видят друзья)"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="given-name"
-            maxLength={40}
-          />
-        )}
-        <input
-          className={inputCls}
-          placeholder="Логин (латиницей)"
-          value={login}
-          onChange={(e) => setLogin(e.target.value)}
-          autoComplete="username"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={20}
-          required
-        />
-        <input
-          className={inputCls}
-          type="password"
-          placeholder="Пароль (мин. 6 символов)"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          minLength={6}
-          required
-        />
-        <ErrorBox>{error}</ErrorBox>
-        <Button className="w-full" disabled={busy}>
-          {busy ? '…' : mode === 'login' ? 'Войти' : 'Создать аккаунт'}
-        </Button>
-      </form>
-
-      <InstallApp className="mt-6" />
+      <InstallApp className="mt-4" />
     </div>
   )
 }

@@ -4,6 +4,8 @@ import { useTripCtx } from './TripLayout'
 import { useAuth } from '../auth'
 import { CURRENCIES } from '../lib/money'
 import { errMsg, supabase } from '../lib/supabase'
+import { Check, Download, Loader2, LogOut, Share2, Trash2, UserMinus } from 'lucide-react'
+import { Button as UiButton } from '@/components/ui/button'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 import { InstallApp } from '../components/InstallApp'
 import { NotifySettings } from '../components/NotifySettings'
@@ -63,27 +65,30 @@ export default function TripSettings() {
       <section>
         <Label>Пригласить друзей</Label>
         <Card className="space-y-3">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             Отправь ссылку в чат — друг зарегистрируется и сразу попадёт в эту поездку.
           </p>
-          <div className="truncate rounded-lg bg-slate-50 px-3 py-2 font-mono text-sm text-slate-600">{link}</div>
+          <div className="truncate rounded-lg border border-dashed bg-muted px-3 py-2.5 font-mono text-sm text-muted-foreground select-all">
+            {link}
+          </div>
           <Button className="w-full" onClick={share}>
-            {copied ? 'Скопировано ✓' : 'Поделиться ссылкой'}
+            {copied ? <Check /> : <Share2 />}
+            {copied ? 'Скопировано' : 'Поделиться ссылкой'}
           </Button>
         </Card>
       </section>
 
       <section>
         <Label>Участники · {members.length}</Label>
-        <Card className="divide-y divide-slate-100 !p-0">
+        <Card className="divide-y divide-border !p-0">
           {members.map((m) => (
             <div key={m.id} className="flex items-center gap-3 px-4 py-3">
               <Avatar p={m} />
               <span className="flex-1">
                 {m.name}
-                {m.id === me && <span className="text-slate-400"> (я)</span>}
+                {m.id === me && <span className="text-muted-foreground"> (я)</span>}
               </span>
-              {m.id === trip.created_by && <span className="text-xs text-slate-400">создатель</span>}
+              {m.id === trip.created_by && <span className="text-xs text-muted-foreground">создатель</span>}
             </div>
           ))}
         </Card>
@@ -125,7 +130,7 @@ export default function TripSettings() {
             </Button>
           </div>
           <div>
-            <div className="mb-1.5 text-sm text-slate-600">Валюта итогов</div>
+            <div className="mb-1.5 text-sm text-muted-foreground">Валюта итогов</div>
             <div className="flex gap-2">
               {['THB', 'KZT', 'USD'].map((c) => (
                 <Chip
@@ -142,20 +147,20 @@ export default function TripSettings() {
               ))}
             </div>
             {!canChangeBase && (
-              <p className="mt-1.5 text-xs text-slate-500">Менять можно только пока нет расходов.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">Менять можно только пока нет расходов.</p>
             )}
           </div>
         </Card>
         <div className="mt-2 space-y-2">
           <ErrorBox>{error}</ErrorBox>
-          {saved && <div className="text-sm text-teal-700">{saved}</div>}
+          {saved && <div className="text-sm text-primary">{saved}</div>}
         </div>
       </section>
 
       <section>
         <Label>Выгрузка и бэкап</Label>
         <Card className="space-y-3">
-          <p className="text-sm text-slate-600">
+          <p className="text-sm text-muted-foreground">
             Один файл со всем: итоги и переводы, все расходы с долей каждого, возвраты, наличные. Открывается в Excel,
             Numbers и Google Таблицах. Удобно скачивать раз в пару дней — на всякий случай.
           </p>
@@ -184,7 +189,8 @@ export default function TripSettings() {
               }
             }}
           >
-            {exporting ? '…' : '📥 Скачать всё (Excel / CSV)'}
+            {exporting ? <Loader2 className="animate-spin" /> : <Download />}
+            Скачать всё (Excel / CSV)
           </Button>
         </Card>
       </section>
@@ -195,7 +201,7 @@ export default function TripSettings() {
 
       <div className="space-y-2">
         {involved ? (
-          <p className="text-center text-xs text-slate-500">
+          <p className="text-center text-xs text-muted-foreground">
             Покинуть поездку нельзя — ты уже есть в расходах. Иначе у остальных сломаются итоги.
           </p>
         ) : (
@@ -207,7 +213,7 @@ export default function TripSettings() {
               if (await run(() => supabase.rpc('leave_trip', { p_trip: trip.id }), '')) nav('/', { replace: true })
             }}
           >
-            Покинуть поездку
+            <UserMinus /> Покинуть поездку
           </Button>
         )}
         {trip.created_by === me && (
@@ -219,15 +225,16 @@ export default function TripSettings() {
               if (await run(() => supabase.from('trips').delete().eq('id', trip.id), '')) nav('/', { replace: true })
             }}
           >
-            Удалить поездку
+            <Trash2 /> Удалить поездку
           </Button>
         )}
-        <button
+        <UiButton
+          variant="ghost"
           onClick={() => supabase.auth.signOut({ scope: 'local' })}
-          className="w-full pt-2 text-center text-sm text-slate-400 underline"
+          className="w-full text-muted-foreground"
         >
-          Выйти из аккаунта
-        </button>
+          <LogOut /> Выйти из аккаунта
+        </UiButton>
       </div>
     </div>
   )

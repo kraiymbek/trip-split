@@ -18,6 +18,7 @@ import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
 import type { PayMethod } from '../types'
 import { PayPicker, lastBank } from '../components/PayPicker'
 import { lastUsed, quickTitles } from '../lib/quick'
+import { Check, Loader2, Trash2 } from 'lucide-react'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -239,24 +240,28 @@ export default function ExpenseForm() {
     nav(`/t/${trip.id}`, { replace: true })
   }
 
-  if (expenseId && !editing) return <p className="py-16 text-center text-slate-500">Расход не найден</p>
+  if (expenseId && !editing) return <p className="py-16 text-center text-muted-foreground">Расход не найден</p>
 
   return (
     <form onSubmit={submit} className="space-y-5 pb-6">
-      <h2 className="text-xl font-bold">{editing ? 'Изменить расход' : 'Новый расход'}</h2>
+      <h2 className="text-2xl font-bold tracking-tight">{editing ? 'Изменить расход' : 'Новый расход'}</h2>
 
       {/* сумма и валюта */}
       <Card className="space-y-3">
+        <label htmlFor="amount" className="text-sm font-semibold text-muted-foreground">
+          Сумма
+        </label>
         <div className="flex items-baseline gap-2">
           <input
-            className="w-full bg-transparent text-4xl font-bold outline-none placeholder:text-slate-300"
+            id="amount"
+            className="w-full bg-transparent text-5xl font-bold tracking-tight outline-none tabular placeholder:text-muted-foreground/40"
             inputMode="decimal"
             placeholder="0"
             value={amountStr}
             onChange={(e) => setAmountStr(e.target.value)}
             autoFocus={!editing}
           />
-          <span className="text-3xl font-bold text-slate-400">{CURRENCIES[currency]?.symbol ?? currency}</span>
+          <span className="text-3xl font-bold text-muted-foreground">{CURRENCIES[currency]?.symbol ?? currency}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {[...new Set([base, ...QUICK_CURRENCIES])].map((c) => (
@@ -285,23 +290,23 @@ export default function ExpenseForm() {
           </select>
         )}
         {currency !== base && (
-          <div className="rounded-xl bg-slate-50 p-3 text-sm">
+          <div className="rounded-xl bg-muted p-3 text-sm">
             <div className="flex items-center gap-2">
-              <span className="shrink-0 text-slate-500">1 {currency} =</span>
+              <span className="shrink-0 text-muted-foreground">1 {currency} =</span>
               <input
-                className="h-9 w-28 rounded-lg bg-white px-2 ring-1 ring-slate-200 outline-none focus:ring-teal-500"
+                className="h-9 w-28 rounded-lg bg-card px-2 border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 inputMode="decimal"
                 value={rateStr}
                 onChange={(e) => setRateStr(e.target.value)}
               />
-              <span className="text-slate-500">{base}</span>
-              {rateState === 'loading' && <span className="text-xs text-slate-400">курс…</span>}
+              <span className="text-muted-foreground">{base}</span>
+              {rateState === 'loading' && <span className="text-xs text-muted-foreground">курс…</span>}
             </div>
             {rateState === 'failed' && (
               <div className="mt-1 text-xs text-amber-700">Не удалось загрузить курс — введи вручную</div>
             )}
             {rateOk && (
-              <div className="mt-1 text-xs text-slate-500">
+              <div className="mt-1 text-xs text-muted-foreground">
                 1 {base} = {+(1 / rate).toPrecision(5)} {currency}
                 {amountBase ? ` · итого ${formatMoney(amountBase, base)}` : ''}
               </div>
@@ -383,13 +388,14 @@ export default function ExpenseForm() {
       <div>
         <div className="mb-1.5 flex items-center justify-between">
           <Label>За кого</Label>
-          <div className="flex rounded-lg bg-slate-200/70 p-0.5 text-xs font-semibold">
+          <div className="flex rounded-lg bg-muted p-1 text-sm font-semibold" role="group" aria-label="Как делить">
             {(['equal', 'custom'] as const).map((m) => (
               <button
                 key={m}
                 type="button"
                 onClick={() => switchSplit(m)}
-                className={`rounded-md px-2.5 py-1 ${splitMode === m ? 'bg-white shadow-sm' : 'text-slate-500'}`}
+                aria-pressed={splitMode === m}
+                className={`min-h-10 cursor-pointer rounded-md px-3 ${splitMode === m ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}
               >
                 {m === 'equal' ? 'Поровну' : 'Свои суммы'}
               </button>
@@ -397,52 +403,52 @@ export default function ExpenseForm() {
           </div>
         </div>
 
-        <Card className="divide-y divide-slate-100 !p-0">
+        <Card className="divide-y divide-border !p-0">
           {members.map((m) => {
             const share = shares?.find((s) => s.user_id === m.id)?.share_base
             return splitMode === 'equal' ? (
               <label key={m.id} className="flex cursor-pointer items-center gap-3 px-4 py-3">
                 <input
                   type="checkbox"
-                  className="h-5 w-5 accent-teal-600"
+                  className="h-5 w-5 accent-primary"
                   checked={forIds.includes(m.id)}
                   onChange={() => toggleFor(m.id)}
                 />
                 <Avatar p={m} size={28} />
                 <span className="flex-1">{m.id === me ? `${m.name} (я)` : m.name}</span>
-                {share !== undefined && <span className="text-sm text-slate-500">{formatMoney(share, base)}</span>}
+                {share !== undefined && <span className="text-sm text-muted-foreground">{formatMoney(share, base)}</span>}
               </label>
             ) : (
               <div key={m.id} className="flex items-center gap-3 px-4 py-2">
                 <Avatar p={m} size={28} />
                 <span className="flex-1">{m.id === me ? `${m.name} (я)` : m.name}</span>
                 <input
-                  className="h-10 w-28 rounded-lg bg-slate-50 px-2 text-right ring-1 ring-slate-200 outline-none focus:ring-teal-500"
+                  className="h-10 w-28 rounded-lg bg-muted px-2 text-right border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   inputMode="decimal"
                   placeholder="0"
                   value={custom[m.id] ?? ''}
                   onChange={(e) => setCustom((c) => ({ ...c, [m.id]: e.target.value }))}
                 />
-                <span className="w-6 text-slate-400">{CURRENCIES[currency]?.symbol ?? currency}</span>
+                <span className="w-6 text-muted-foreground">{CURRENCIES[currency]?.symbol ?? currency}</span>
               </div>
             )
           })}
         </Card>
         {splitMode === 'equal' && (
-          <div className="mt-2 flex gap-3 text-sm">
-            <button type="button" className="text-teal-700" onClick={() => setForIds(members.map((m) => m.id))}>
+          <div className="mt-1 flex gap-1 text-sm">
+            <button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 font-medium text-primary hover:bg-accent" onClick={() => setForIds(members.map((m) => m.id))}>
               Все
             </button>
-            <button type="button" className="text-teal-700" onClick={() => setForIds([paidBy])}>
+            <button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 font-medium text-primary hover:bg-accent" onClick={() => setForIds([paidBy])}>
               Только платящий
             </button>
-            <button type="button" className="text-teal-700" onClick={() => setForIds([])}>
+            <button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 font-medium text-primary hover:bg-accent" onClick={() => setForIds([])}>
               Никто
             </button>
           </div>
         )}
         {splitMode === 'custom' && amount && (
-          <div className={`mt-2 text-sm ${remaining === 0 ? 'text-teal-700' : 'text-amber-700'}`}>
+          <div className={`mt-2 text-sm ${remaining === 0 ? 'text-primary' : 'text-amber-700'}`}>
             {remaining === 0
               ? '✓ Всё распределено'
               : remaining > 0
@@ -453,8 +459,10 @@ export default function ExpenseForm() {
       </div>
 
       <div>
-        <Label>Дата</Label>
-        <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
+        <Label>
+          <label htmlFor="date">Дата</label>
+        </Label>
+        <input id="date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
 
       <ErrorBox>{error}</ErrorBox>
@@ -464,12 +472,13 @@ export default function ExpenseForm() {
           Отмена
         </Button>
         <Button className="flex-[2]" disabled={busy}>
-          {busy ? '…' : 'Сохранить'}
+          {busy ? <Loader2 className="animate-spin" /> : <Check />}
+          Сохранить
         </Button>
       </div>
       {editing && (
         <Button type="button" variant="danger" className="w-full" onClick={remove} disabled={busy}>
-          Удалить расход
+          <Trash2 /> Удалить расход
         </Button>
       )}
     </form>

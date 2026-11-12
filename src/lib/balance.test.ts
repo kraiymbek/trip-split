@@ -246,3 +246,15 @@ describe('экспорт CSV', async () => {
     expect(csv).toContain('Бек;USD;0,00;100,00;0,00;0,00;-100,00')
   })
 })
+
+import { formatMoney } from './money'
+describe('formatMoney', () => {
+  // Intl ставит неразрывные пробелы между разрядами — сравниваем без них
+  const f = (m: number, c: string) => formatMoney(m, c).replace(/\s/g, ' ')
+  it('целые без копеек, дробные — всегда два знака', () => {
+    expect(f(100000, 'THB')).toBe('1 000 ฿')
+    expect(f(2388560, 'THB')).toBe('23 885,60 ฿')
+    expect(f(129744, 'THB')).toBe('1 297,44 ฿')
+    expect(f(-50, 'USD')).toBe('-0,50 $')
+  })
+})

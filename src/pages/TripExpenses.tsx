@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom'
 import { useTripCtx } from './TripLayout'
 import { formatMoney } from '../lib/money'
 import { METHODS, methodLabel, type Expense, type PayMethod } from '../types'
+import { Clock, Plus, ReceiptText } from 'lucide-react'
 import { Avatar, Card, Chip } from '../components/ui'
+import { MethodIcon } from '../components/PayPicker'
 
 const dayFmt = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
 
@@ -40,15 +42,15 @@ export default function TripExpenses() {
   }
 
   return (
-    <div>
+    <div className="pb-20">
       <div className="mb-3 grid grid-cols-2 gap-3">
-        <Card className="!p-3">
-          <div className="text-xs text-slate-500">Потрачено{method !== 'all' || payer !== 'all' ? ' (фильтр)' : ''}</div>
-          <div className="text-lg font-bold">{formatMoney(total, base)}</div>
+        <Card className="border-transparent bg-primary !p-4 text-primary-foreground shadow-md shadow-primary/15">
+          <div className="text-xs font-medium opacity-80">Потрачено{method !== 'all' || payer !== 'all' ? ' (фильтр)' : ''}</div>
+          <div className="mt-0.5 text-xl font-bold tabular">{formatMoney(total, base)}</div>
         </Card>
-        <Card className="!p-3">
-          <div className="text-xs text-slate-500">Из них на меня</div>
-          <div className="text-lg font-bold">{formatMoney(mine, base)}</div>
+        <Card className="!p-4">
+          <div className="text-xs font-medium text-muted-foreground">Из них на меня</div>
+          <div className="mt-0.5 text-xl font-bold tabular">{formatMoney(mine, base)}</div>
         </Card>
       </div>
 
@@ -58,7 +60,7 @@ export default function TripExpenses() {
         </Chip>
         {METHODS.map((m) => (
           <Chip key={m.id} active={method === m.id} onClick={() => setMethod(m.id)}>
-            {m.icon} {m.label}
+            <MethodIcon m={m.id} className="size-4" /> {m.label}
           </Chip>
         ))}
       </div>
@@ -74,41 +76,44 @@ export default function TripExpenses() {
       </div>
 
       {groups.length === 0 && (
-        <div className="py-16 text-center text-slate-500">
-          <div className="mb-2 text-4xl">🧾</div>
-          {expenses.length ? 'Ничего не найдено' : 'Расходов пока нет. Жми «+», чтобы добавить первый.'}
+        <div className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+            <ReceiptText className="size-7" aria-hidden />
+          </span>
+          {expenses.length ? 'Ничего не найдено' : 'Расходов пока нет. Нажми «+» внизу, чтобы добавить первый.'}
         </div>
       )}
 
       {groups.map((items) => (
         <section key={items[0].id} className="mb-5">
-          <h2 className="mb-2 text-xs font-semibold tracking-wide text-slate-500 uppercase">
+          <h2 className="mb-2 px-1 text-sm font-semibold text-muted-foreground first-letter:uppercase">
             {dayFmt.format(new Date(items[0].spent_at))}
           </h2>
-          <Card className="divide-y divide-slate-100 !p-0">
+          <Card className="divide-y divide-border overflow-hidden !p-0">
             {items.map((e) => (
-              <Link key={e.id} to={`e/${e.id}`} className="flex gap-3 px-4 py-3 active:bg-slate-50">
+              <Link key={e.id} to={`e/${e.id}`} className="flex gap-3 px-4 py-3 transition-colors hover:bg-accent/40 active:bg-muted">
                 <Avatar p={memberById[e.paid_by]} size={40} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="truncate font-semibold">
-                      {e.pending && <span title="Ждёт отправки">⏳ </span>}
+                    <div className="flex min-w-0 items-center gap-1.5 font-semibold">
+                      {e.pending && <Clock className="size-4 shrink-0 text-sky-600" aria-label="Ждёт отправки" />}
                       {unseenExpenses.has(e.id) && (
-                        <span className="mr-1.5 inline-block h-2 w-2 rounded-full bg-rose-500 align-middle" title="Новое" />
+                        <span className="size-2 shrink-0 rounded-full bg-destructive" role="img" aria-label="Новое" />
                       )}
-                      {e.title}
+                      <span className="truncate">{e.title}</span>
                     </div>
-                    <div className="shrink-0 text-right font-semibold">{formatMoney(e.amount, e.currency)}</div>
+                    <div className="shrink-0 text-right font-semibold tabular">{formatMoney(e.amount, e.currency)}</div>
                   </div>
-                  {e.note && <div className="truncate text-sm text-slate-500">{e.note}</div>}
-                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-slate-500">
-                    <span className="flex min-w-0 items-center">
+                  {e.note && <div className="truncate text-sm text-muted-foreground">{e.note}</div>}
+                  <div className="mt-1 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span className="flex min-w-0 items-center gap-1">
+                      <MethodIcon m={e.method} className="size-3.5 shrink-0" />
                       <span className="truncate">
                         {e.paid_by === me ? 'Я' : (memberById[e.paid_by]?.name ?? '?')} · {methodLabel(e.method, e.bank)} ·{' '}
                         {forWhom(e)}
                       </span>
                     </span>
-                    {e.currency !== base && <span className="shrink-0">≈ {formatMoney(e.amount_base, base)}</span>}
+                    {e.currency !== base && <span className="shrink-0 tabular">≈ {formatMoney(e.amount_base, base)}</span>}
                   </div>
                 </div>
               </Link>
@@ -119,10 +124,10 @@ export default function TripExpenses() {
 
       <Link
         to="new"
-        className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+5rem)] z-30 flex h-14 w-14 items-center justify-center rounded-full bg-teal-600 text-3xl text-white shadow-lg active:bg-teal-700"
+        className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+5.5rem)] z-30 flex size-14 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg shadow-primary/30 transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-95"
         aria-label="Добавить расход"
       >
-        +
+        <Plus className="size-7" />
       </Link>
     </div>
   )

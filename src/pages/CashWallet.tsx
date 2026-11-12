@@ -4,6 +4,7 @@ import { computeWallet } from '../lib/balance'
 import { CURRENCIES, QUICK_CURRENCIES, formatMoney, moneyError, parseMoney } from '../lib/money'
 import { errMsg, supabase } from '../lib/supabase'
 import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
+import { ArrowLeftRight, Banknote, Clock, HandCoins, Luggage, Receipt, Trash2, type LucideIcon } from 'lucide-react'
 import { Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -26,7 +27,7 @@ function CurrencyChips({ value, onChange, exclude }: { value: string; onChange: 
       ))}
       <select
         className={`h-9 rounded-full px-3 text-sm ring-1 outline-none ${
-          isOther ? 'bg-teal-600 text-white ring-teal-600' : 'bg-white text-slate-600 ring-slate-200'
+          isOther ? 'bg-primary text-white ring-primary' : 'bg-card text-muted-foreground ring-border'
         }`}
         value={isOther ? value : ''}
         onChange={(e) => e.target.value && onChange(e.target.value)}
@@ -47,7 +48,7 @@ function CurrencyChips({ value, onChange, exclude }: { value: string; onChange: 
 type HistoryItem = {
   key: string
   date: string
-  icon: string
+  icon: LucideIcon
   title: string
   sub?: string
   lines: { amount: number; currency: string }[]
@@ -77,7 +78,7 @@ export default function CashWallet() {
           ? {
               key: o.id,
               date: o.happened_at,
-              icon: '🧳',
+              icon: Luggage,
               title: 'Привёз с собой',
               sub: o.note ?? undefined,
               lines: [{ amount: o.to_amount, currency: o.to_currency }],
@@ -87,7 +88,7 @@ export default function CashWallet() {
           : {
               key: o.id,
               date: o.happened_at,
-              icon: '🔁',
+              icon: ArrowLeftRight,
               title: `Обмен ${o.from_currency} → ${o.to_currency}`,
               sub: [
                 `курс 1 ${o.from_currency} = ${+(o.to_amount / o.from_amount!).toPrecision(5)} ${o.to_currency}`,
@@ -109,7 +110,7 @@ export default function CashWallet() {
       items.push({
         key: e.id,
         date: e.spent_at,
-        icon: '🧾',
+        icon: Receipt,
         title: e.title,
         sub: 'расход наличными',
         lines: [{ amount: -e.amount, currency: e.currency }],
@@ -122,7 +123,7 @@ export default function CashWallet() {
       items.push({
         key: s.id,
         date: s.created_at,
-        icon: '🤝',
+        icon: HandCoins,
         title: out ? `Вернул долг: ${other}` : `Вернули долг: ${other}`,
         lines: [{ amount: out ? -s.amount_base : s.amount_base, currency: base }],
       })
@@ -142,26 +143,32 @@ export default function CashWallet() {
     <div className="space-y-5 pb-6">
       {/* остаток */}
       {main ? (
-        <Card className={wallet[main].balance < 0 ? '!bg-rose-600 text-white' : '!bg-teal-600 text-white'}>
-          <div className="text-sm opacity-80">Наличными у меня</div>
-          <div className="mt-1 text-3xl font-bold">{formatMoney(wallet[main].balance, main)}</div>
+        <Card
+          className={`border-transparent shadow-md ${wallet[main].balance < 0 ? '!bg-negative text-white shadow-negative/20' : '!bg-primary text-primary-foreground shadow-primary/20'}`}
+        >
+          <div className="flex items-center gap-1.5 text-sm font-medium opacity-85">
+            <Banknote className="size-4" aria-hidden /> Наличными у меня
+          </div>
+          <div className="mt-1 text-4xl font-bold tracking-tight tabular">{formatMoney(wallet[main].balance, main)}</div>
           {currencies.length > 1 && (
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm opacity-90">
               {currencies.slice(1).map((c) => (
-                <span key={c}>{formatMoney(wallet[c].balance, c)}</span>
+                <span key={c} className="tabular">{formatMoney(wallet[c].balance, c)}</span>
               ))}
             </div>
           )}
         </Card>
       ) : (
-        <Card className="text-center text-slate-500">
-          <div className="mb-1 text-3xl">💵</div>
+        <Card className="flex flex-col items-center gap-3 py-6 text-center text-muted-foreground">
+          <span className="flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+            <Banknote className="size-7" aria-hidden />
+          </span>
           Здесь будет твой остаток наличных. Отметь, сколько взял с собой, и записывай каждый обмен.
         </Card>
       )}
 
       {currencies.some((c) => wallet[c].balance < 0) && (
-        <p className="text-xs text-rose-700">
+        <p className="text-xs text-negative">
           Минус значит, что наличными потрачено больше, чем записано. Добавь «Привёз с собой» или обмен.
         </p>
       )}
@@ -169,10 +176,10 @@ export default function CashWallet() {
       {/* кнопки */}
       <div className="grid grid-cols-2 gap-2">
         <Button variant={mode === 'exchange' ? 'primary' : 'ghost'} onClick={() => setMode(mode === 'exchange' ? 'none' : 'exchange')}>
-          🔁 Обменял
+          <ArrowLeftRight /> Обменял
         </Button>
         <Button variant={mode === 'deposit' ? 'primary' : 'ghost'} onClick={() => setMode(mode === 'deposit' ? 'none' : 'deposit')}>
-          🧳 Привёз с собой
+          <Luggage /> Привёз с собой
         </Button>
       </div>
 
@@ -192,7 +199,7 @@ export default function CashWallet() {
       {currencies.length > 0 && (
         <section>
           <Label>По валютам</Label>
-          <Card className="divide-y divide-slate-100 !p-0">
+          <Card className="divide-y divide-border !p-0">
             {currencies.map((c) => {
               const l = wallet[c]
               const parts = [
@@ -207,9 +214,9 @@ export default function CashWallet() {
                     <span>
                       {CURRENCIES[c]?.flag} {c}
                     </span>
-                    <span className={l.balance < 0 ? 'text-rose-600' : ''}>{formatMoney(l.balance, c)}</span>
+                    <span className={`tabular ${l.balance < 0 ? 'text-negative' : ''}`}>{formatMoney(l.balance, c)}</span>
                   </div>
-                  <div className="mt-0.5 text-xs text-slate-500">{parts.join(' · ')}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{parts.join(' · ')}</div>
                 </div>
               )
             })}
@@ -221,37 +228,43 @@ export default function CashWallet() {
       {history.length > 0 && (
         <section>
           <Label>История наличных</Label>
-          <Card className="divide-y divide-slate-100 !p-0">
+          <Card className="divide-y divide-border !p-0">
             {history.map((h) => (
               <div key={h.key} className="flex items-start gap-3 px-4 py-3">
-                <span className="text-xl">{h.icon}</span>
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
+                  <h.icon className="size-4" aria-hidden />
+                </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate font-medium">
-                    {h.pending && '⏳ '}
-                    {h.title}
+                  <div className="flex items-center gap-1.5 font-medium">
+                    {h.pending && <Clock className="size-3.5 shrink-0 text-sky-600" aria-label="Ждёт отправки" />}
+                    <span className="truncate">{h.title}</span>
                   </div>
-                  <div className="truncate text-xs text-slate-500">
+                  <div className="truncate text-xs text-muted-foreground">
                     {dateFmt.format(new Date(h.date))}
                     {h.sub ? ` · ${h.sub}` : ''}
                   </div>
                 </div>
-                <div className="shrink-0 text-right text-sm font-semibold">
+                <div className="shrink-0 text-right text-sm font-semibold tabular">
                   {h.lines.map((l, i) => (
-                    <div key={i} className={l.amount < 0 ? 'text-rose-600' : 'text-teal-700'}>
+                    <div key={i} className={l.amount < 0 ? 'text-negative' : 'text-primary'}>
                       {l.amount < 0 ? '−' : '+'}
                       {formatMoney(Math.abs(l.amount), l.currency)}
                     </div>
                   ))}
                 </div>
                 {h.opId && (
-                  <button onClick={() => removeOp(h.opId!)} className="px-1 text-slate-400" aria-label="Удалить">
-                    ✕
+                  <button
+                    onClick={() => removeOp(h.opId!)}
+                    className="-my-1 flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
+                    aria-label="Удалить запись"
+                  >
+                    <Trash2 className="size-4" />
                   </button>
                 )}
               </div>
             ))}
           </Card>
-          <p className="mt-2 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Расходы наличными и возвраты долгов наличными попадают сюда сами. Возвраты считаются в {base}.
           </p>
         </section>
@@ -323,15 +336,15 @@ function OpForm({ kind, tripId, onDone }: { kind: 'exchange' | 'deposit'; tripId
   }
 
   const amountInput = (value: string, set: (v: string) => void, cur: string) => (
-    <div className="flex items-center rounded-xl bg-white px-3.5 ring-1 ring-slate-200 focus-within:ring-2 focus-within:ring-teal-500">
+    <div className="flex items-center rounded-xl bg-card px-3.5 border focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50">
       <input
-        className="h-12 w-full bg-transparent text-xl font-semibold outline-none placeholder:text-slate-300"
+        className="h-12 w-full bg-transparent text-xl font-semibold outline-none placeholder:text-muted-foreground/50"
         inputMode="decimal"
         placeholder="0"
         value={value}
         onChange={(e) => set(e.target.value)}
       />
-      <span className="text-lg font-semibold text-slate-400">{sym(cur)}</span>
+      <span className="text-lg font-semibold text-muted-foreground">{sym(cur)}</span>
     </div>
   )
 
@@ -351,7 +364,7 @@ function OpForm({ kind, tripId, onDone }: { kind: 'exchange' | 'deposit'; tripId
               <CurrencyChips value={toCur} onChange={setToCur} exclude={fromCur} />
             </div>
             {from && to && fromCur !== toCur && (
-              <div className="rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              <div className="rounded-xl bg-muted px-3 py-2 text-sm text-muted-foreground">
                 Курс: 1 {fromCur} = <b>{+(to / from).toPrecision(5)}</b> {toCur}
               </div>
             )}
@@ -380,8 +393,10 @@ function OpForm({ kind, tripId, onDone }: { kind: 'exchange' | 'deposit'; tripId
           </>
         )}
         <div>
-          <Label>Дата</Label>
-          <input type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
+          <Label>
+            <label htmlFor="cash-date">Дата</label>
+          </Label>
+          <input id="cash-date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
         <ErrorBox>{error}</ErrorBox>
         <Button className="w-full" disabled={busy}>

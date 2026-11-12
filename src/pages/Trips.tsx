@@ -1,4 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { ChevronRight, LogOut, Luggage, Plane, Plus } from 'lucide-react'
+import { Button as UiButton } from '@/components/ui/button'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { errMsg, supabase } from '../lib/supabase'
@@ -51,9 +53,9 @@ export default function Trips() {
   return (
     <div className="mx-auto max-w-md px-4 pt-[max(env(safe-area-inset-top),1.25rem)] pb-10">
       <header className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Поездки</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Поездки</h1>
         <div className="flex items-center gap-2">
-          <span className="text-sm text-slate-500">{profile?.name}</span>
+          <span className="text-sm text-muted-foreground">{profile?.name}</span>
           <Avatar p={profile ?? undefined} />
         </div>
       </header>
@@ -64,21 +66,27 @@ export default function Trips() {
         <div className="space-y-3">
           {trips.map((t) => (
             <Link key={t.id} to={`/t/${t.id}`} className="block">
-              <Card className="flex items-center justify-between active:bg-slate-50">
-                <div>
-                  <div className="font-semibold">{t.name}</div>
-                  <div className="text-sm text-slate-500">
+              <Card className="flex items-center gap-3 transition-colors hover:bg-accent/40 active:bg-muted">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground">
+                  <Plane className="size-5" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{t.name}</div>
+                  <div className="text-sm text-muted-foreground">
                     Итог в {CURRENCIES[t.base_currency]?.flag} {t.base_currency}
                   </div>
                 </div>
-                <span className="text-xl text-slate-300">›</span>
+                <ChevronRight className="size-5 text-muted-foreground" aria-hidden />
               </Card>
             </Link>
           ))}
           {trips.length === 0 && !creating && (
-            <p className="py-6 text-center text-slate-500">
+            <div className="flex flex-col items-center gap-3 py-8 text-center text-muted-foreground">
+              <span className="flex size-14 items-center justify-center rounded-2xl bg-accent text-accent-foreground">
+                <Luggage className="size-7" aria-hidden />
+              </span>
               Пока нет поездок. Создай новую или вставь ссылку-приглашение от друга.
-            </p>
+            </div>
           )}
         </div>
       )}
@@ -91,8 +99,12 @@ export default function Trips() {
         <Card className="mt-5">
           <form onSubmit={create} className="space-y-4">
             <div>
-              <Label>Название</Label>
+              <Label>
+                <label htmlFor="trip-name">Название</label>
+              </Label>
               <input
+                id="trip-name"
+                placeholder="Таиланд 2026"
                 className={inputCls}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -109,7 +121,7 @@ export default function Trips() {
                   </Chip>
                 ))}
               </div>
-              <p className="mt-1.5 text-xs text-slate-500">
+              <p className="mt-1.5 text-xs text-muted-foreground">
                 Расходы можно вносить в любой валюте (баты, тенге…) — они пересчитаются по курсу.
               </p>
             </div>
@@ -123,14 +135,18 @@ export default function Trips() {
         </Card>
       ) : (
         <Button className="mt-5 w-full" onClick={() => setCreating(true)}>
-          + Новая поездка
+          <Plus />
+          Новая поездка
         </Button>
       )}
 
       <form onSubmit={join} className="mt-6">
-        <Label>Есть приглашение?</Label>
+        <Label>
+          <label htmlFor="invite">Есть приглашение?</label>
+        </Label>
         <div className="flex gap-2">
           <input
+            id="invite"
             className={inputCls}
             placeholder="Ссылка или код"
             value={code}
@@ -142,12 +158,14 @@ export default function Trips() {
         </div>
       </form>
 
-      <button
+      <UiButton
+        variant="ghost"
         onClick={() => supabase.auth.signOut({ scope: 'local' })}
-        className="mt-10 w-full text-center text-sm text-slate-400 underline"
+        className="mt-10 w-full text-muted-foreground"
       >
+        <LogOut />
         Выйти из аккаунта
-      </button>
+      </UiButton>
     </div>
   )
 }

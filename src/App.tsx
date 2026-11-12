@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { AuthProvider, useAuth } from './auth'
 import { supabaseConfigured } from './lib/supabase'
 import { Spinner } from './components/ui'
+import { Toaster } from '@/components/ui/sonner'
 import Auth from './pages/Auth'
 import Trips from './pages/Trips'
 import Join from './pages/Join'
@@ -24,8 +25,8 @@ function RequireAuth({ children }: { children: ReactNode }) {
 export default function App() {
   if (!supabaseConfigured)
     return (
-      <div className="mx-auto max-w-md px-5 pt-20 text-slate-600">
-        <h1 className="mb-2 text-xl font-bold text-slate-900">Не настроен Supabase</h1>
+      <div className="mx-auto max-w-md px-5 pt-20 text-muted-foreground">
+        <h1 className="mb-2 text-xl font-bold text-foreground">Не настроен Supabase</h1>
         <p>
           Создай файл <code>.env</code> по образцу <code>.env.example</code> (или добавь переменные в Vercel) и
           перезапусти.
@@ -50,6 +51,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <Toaster position="top-center" offset={{ top: 'max(env(safe-area-inset-top), 12px)' }} closeButton className="pointer-events-auto" />
       </BrowserRouter>
     </AuthProvider>
   )

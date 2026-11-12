@@ -80,9 +80,9 @@ export const BANKS: { id: string; label: string; color: string }[] = [
 export const bankLabel = (id: string | null | undefined) =>
   BANKS.find((b) => b.id === id)?.label ?? (id ? id : 'Карта')
 
-/** «💳 Kaspi» или «💵 Наличные» */
+/** «Kaspi» или «Наличные» (иконку рисует MethodIcon) */
 export const methodLabel = (m: PayMethod, bank?: string | null) =>
-  m === 'card' ? `💳 ${bank ? bankLabel(bank) : 'Карта'}` : '💵 Наличные'
+  m === 'card' ? (bank ? bankLabel(bank) : 'Карта') : 'Наличные'
 
 export interface CashOp {
   id: string

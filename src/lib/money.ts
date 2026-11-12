@@ -13,11 +13,13 @@ export const CURRENCIES: Record<string, { symbol: string; flag: string; name: st
 
 export const QUICK_CURRENCIES = ['THB', 'KZT', 'USD']
 
-const nf = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+const nfInt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 })
+const nfFrac = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
+/** Целые — без копеек («1 000 ฿»), дробные — всегда два знака («23 885,60 ฿», а не «23 885,6 ฿») */
 export function formatMoney(minor: number, currency: string): string {
   const sym = CURRENCIES[currency]?.symbol ?? currency
-  return `${nf.format(minor / 100)} ${sym}`
+  return `${(minor % 100 === 0 ? nfInt : nfFrac).format(minor / 100)} ${sym}`
 }
 
 /** Максимум для одной суммы: 1 млрд единиц валюты */

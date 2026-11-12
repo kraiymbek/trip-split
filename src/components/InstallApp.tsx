@@ -1,4 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import { EllipsisVertical, Share, Smartphone } from 'lucide-react'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Button, Label } from './ui'
 
 // Событие установки (Chrome / Edge / Samsung Internet на Android и десктопе).
@@ -71,9 +73,10 @@ export function InstallApp({ className = '', title }: { className?: string; titl
     <section className={className}>
       {title && <Label>{title}</Label>}
       <Button type="button" variant="ghost" className="w-full" onClick={install}>
-        📲 Установить приложение
+        <Smartphone />
+        Установить приложение
       </Button>
-      {help && <InstallHelp onClose={() => setHelp(false)} />}
+      <InstallHelp open={help} onClose={() => setHelp(false)} />
     </section>
   )
 }
@@ -81,7 +84,7 @@ export function InstallApp({ className = '', title }: { className?: string; titl
 function Step({ n, children }: { n: number; children: ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-teal-600 text-sm font-bold text-white">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
         {n || '!'}
       </span>
       <span className="pt-0.5">{children}</span>
@@ -89,47 +92,21 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
   )
 }
 
-const ShareIcon = () => (
-  <svg
-    viewBox="0 0 24 24"
-    className="inline h-5 w-5 -translate-y-0.5 text-sky-600"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-label="Поделиться"
-  >
-    <path d="M12 3v12M8 7l4-4 4 4" />
-    <path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
-  </svg>
-)
+const ShareIcon = () => <Share className="inline size-5 -translate-y-0.5 text-sky-600" aria-label="Поделиться" />
 
-function InstallHelp({ onClose }: { onClose: () => void }) {
+function InstallHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   const ios = isIOS()
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center" onClick={onClose}>
-      <div
-        className="w-full max-w-md rounded-t-3xl bg-white p-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)] shadow-xl sm:rounded-3xl"
-        onClick={(e) => e.stopPropagation()}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Как установить приложение"
-      >
-        <div className="mb-4 flex items-center gap-3">
-          <img src="/icons/apple-touch-icon.png" alt="" className="h-12 w-12 rounded-xl" />
+    <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
+      <SheetContent side="bottom" className="mx-auto max-w-md rounded-t-3xl px-6 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">
+        <SheetHeader className="flex-row items-center gap-3 px-0 text-left">
+          <img src="/icons/apple-touch-icon.png" alt="" className="size-12 rounded-xl" />
           <div>
-            <div className="font-bold">Trip Split на экран «Домой»</div>
-            <div className="text-sm text-slate-500">Откроется как обычное приложение, без адресной строки</div>
+            <SheetTitle>Trip Split на экран «Домой»</SheetTitle>
+            <SheetDescription>Откроется как обычное приложение, без адресной строки</SheetDescription>
           </div>
-        </div>
+        </SheetHeader>
 
         <ol className="space-y-3 text-[15px]">
           {ios ? (
@@ -152,7 +129,7 @@ function InstallHelp({ onClose }: { onClose: () => void }) {
           ) : isAndroid() ? (
             <>
               <Step n={1}>
-                Открой меню браузера <b>⋮</b> (справа вверху).
+                Открой меню браузера <EllipsisVertical className="inline size-4 -translate-y-px" aria-label="меню" /> (справа вверху).
               </Step>
               <Step n={2}>
                 Выбери <b>«Установить приложение»</b> или <b>«Добавить на главный экран»</b>.
@@ -165,15 +142,15 @@ function InstallHelp({ onClose }: { onClose: () => void }) {
                 Открой этот адрес на телефоне: <b className="break-all">{window.location.origin}</b>
               </Step>
               <Step n={2}>iPhone — Safari → «Поделиться» → «На экран „Домой“».</Step>
-              <Step n={3}>Android — Chrome → ⋮ → «Установить приложение».</Step>
+              <Step n={3}>Android — Chrome → меню → «Установить приложение».</Step>
             </>
           )}
         </ol>
 
-        <Button className="mt-6 w-full" onClick={onClose}>
+        <Button className="mt-2 w-full" onClick={onClose}>
           Понятно
         </Button>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   )
 }
