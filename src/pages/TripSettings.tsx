@@ -223,7 +223,7 @@ export default function TripSettings() {
           </Button>
         )}
         <button
-          onClick={() => supabase.auth.signOut()}
+          onClick={() => supabase.auth.signOut({ scope: 'local' })}
           className="w-full pt-2 text-center text-sm text-slate-400 underline"
         >
           Выйти из аккаунта

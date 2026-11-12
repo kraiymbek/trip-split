@@ -143,7 +143,7 @@ export default function Trips() {
       </form>
 
       <button
-        onClick={() => supabase.auth.signOut()}
+        onClick={() => supabase.auth.signOut({ scope: 'local' })}
         className="mt-10 w-full text-center text-sm text-slate-400 underline"
       >
         Выйти из аккаунта
