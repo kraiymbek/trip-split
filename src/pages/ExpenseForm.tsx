@@ -250,7 +250,7 @@ export default function ExpenseForm() {
   if (expenseId && !editing) return <p className="py-16 text-center text-muted-foreground">Расход не найден</p>
 
   return (
-    <form onSubmit={submit} className="space-y-5 pb-6">
+    <form onSubmit={submit} className="flex flex-col gap-5 pb-6">
       <h2 className="text-2xl font-bold tracking-tight">
         {readOnly ? 'Расход' : editing ? 'Изменить расход' : 'Новый расход'}
       </h2>
