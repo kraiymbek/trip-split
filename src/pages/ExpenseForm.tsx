@@ -18,7 +18,8 @@ import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
 import type { PayMethod } from '../types'
 import { PayPicker, lastBank } from '../components/PayPicker'
 import { lastUsed, quickTitles } from '../lib/quick'
-import { Check, Loader2, Trash2 } from 'lucide-react'
+import { Check, Loader2, Lock, Trash2 } from 'lucide-react'
+import { canModify } from '../lib/rights'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -39,10 +40,12 @@ const lsSet = (k: string, v: string) => {
 }
 
 export default function ExpenseForm() {
-  const { trip, members, expenses, me, markExpenseSeen, unseenExpenses } = useTripCtx()
+  const { trip, members, memberById, expenses, me, markExpenseSeen, unseenExpenses } = useTripCtx()
   const { expenseId } = useParams()
   const nav = useNavigate()
   const editing = expenseId ? expenses.find((e) => e.id === expenseId) : undefined
+  // чужой расход — только просмотр (сервер тоже не даст изменить или удалить)
+  const readOnly = !!editing && !canModify(editing, me)
   const quick = useMemo(() => quickTitles(expenses.filter((e) => !e.pending)), [expenses])
 
   // открыл расход, о котором было уведомление, — значит, посмотрел
@@ -165,6 +168,7 @@ export default function ExpenseForm() {
 
   async function submit(e: FormEvent) {
     e.preventDefault()
+    if (readOnly) return
     setError('')
     const amtErr = moneyError(amountStr)
     if (amtErr || !amount) return setError(amtErr || 'Введи сумму')
@@ -234,9 +238,11 @@ export default function ExpenseForm() {
       return nav(`/t/${trip.id}`, { replace: true })
     }
     setBusy(true)
-    const { error } = await supabase.from('expenses').delete().eq('id', editing.id)
+    // без прав RLS не возвращает ошибку, а просто ничего не удаляет — проверяем, что строка ушла
+    const { data, error } = await supabase.from('expenses').delete().eq('id', editing.id).select('id')
     setBusy(false)
     if (error) return setError(errMsg(error))
+    if (!data?.length) return setError('Удалить расход может только автор')
     nav(`/t/${trip.id}`, { replace: true })
   }
 
@@ -244,7 +250,17 @@ export default function ExpenseForm() {
 
   return (
     <form onSubmit={submit} className="space-y-5 pb-6">
-      <h2 className="text-2xl font-bold tracking-tight">{editing ? 'Изменить расход' : 'Новый расход'}</h2>
+      <h2 className="text-2xl font-bold tracking-tight">
+        {readOnly ? 'Расход' : editing ? 'Изменить расход' : 'Новый расход'}
+      </h2>
+      {readOnly && (
+        <p className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2.5 text-sm text-muted-foreground">
+          <Lock className="size-4 shrink-0" aria-hidden />
+          Изменить или удалить может только автор: {memberById[editing.created_by]?.name ?? 'бывший участник'}
+        </p>
+      )}
+
+      <fieldset disabled={readOnly} className="contents">
 
       {/* сумма и валюта */}
       <Card className="space-y-3">
@@ -468,19 +484,22 @@ export default function ExpenseForm() {
         </Label>
         <input id="date" type="date" className={inputCls} value={date} onChange={(e) => setDate(e.target.value)} />
       </div>
+      </fieldset>
 
       <ErrorBox>{error}</ErrorBox>
 
       <div className="flex gap-2">
         <Button type="button" variant="ghost" className="flex-1" onClick={() => nav(`/t/${trip.id}`, { replace: true })}>
-          Отмена
+          {readOnly ? 'Назад' : 'Отмена'}
         </Button>
-        <Button className="flex-[2]" disabled={busy}>
-          {busy ? <Loader2 className="animate-spin" /> : <Check />}
-          Сохранить
-        </Button>
+        {!readOnly && (
+          <Button className="flex-[2]" disabled={busy}>
+            {busy ? <Loader2 className="animate-spin" /> : <Check />}
+            Сохранить
+          </Button>
+        )}
       </div>
-      {editing && (
+      {editing && !readOnly && (
         <Button type="button" variant="danger" className="w-full" onClick={remove} disabled={busy}>
           <Trash2 /> Удалить расход
         </Button>

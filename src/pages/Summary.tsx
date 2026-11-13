@@ -8,6 +8,7 @@ import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
 import { BANKS, METHODS, methodLabel, type PayMethod, type Profile } from '../types'
 import { PayPicker, lastBank } from '../components/PayPicker'
 import { ArrowRight, Check, Clock, PartyPopper, Trash2 } from 'lucide-react'
+import { canModify } from '../lib/rights'
 import { Avatar, Button, Card, Chip, ErrorBox, Label } from '../components/ui'
 import { MethodIcon } from '../components/PayPicker'
 
@@ -50,8 +51,10 @@ export default function Summary() {
   async function deleteSettlement(id: string) {
     if (!confirm('Отменить отметку о возврате?')) return
     if (settlements.find((s) => s.id === id)?.pending) return discard(id)
-    const { error } = await supabase.from('settlements').delete().eq('id', id)
+    // без прав RLS не возвращает ошибку, а просто ничего не удаляет — проверяем, что строка ушла
+    const { data, error } = await supabase.from('settlements').delete().eq('id', id).select('id')
     if (error) setError(errMsg(error))
+    else if (!data?.length) setError('Отменить возврат может только тот, кто его отметил')
     else reload()
   }
 
@@ -208,13 +211,15 @@ export default function Summary() {
                     {methodLabel(s.method, s.bank)} · {dateFmt.format(new Date(s.created_at))}
                   </div>
                 </div>
-                <button
-                  onClick={() => deleteSettlement(s.id)}
-                  className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
-                  aria-label="Отменить возврат"
-                >
-                  <Trash2 className="size-4" />
-                </button>
+                {canModify(s, me) && (
+                  <button
+                    onClick={() => deleteSettlement(s.id)}
+                    className="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/5 hover:text-destructive"
+                    aria-label="Отменить возврат"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                )}
               </div>
             ))}
           </Card>

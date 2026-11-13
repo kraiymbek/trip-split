@@ -27,7 +27,9 @@ npm run db:stop
 ### 1. Supabase — база и регистрация
 
 1. https://supabase.com → **New project** (регион ближе к вам, например Singapore).
-2. **SQL Editor** → New query → вставить весь `supabase/migrations/0001_init.sql` → **Run**.
+2. **SQL Editor** → New query → вставить весь `supabase/migrations/0001_init.sql` → **Run**. Затем так же по порядку
+   остальные файлы из `supabase/migrations/` (`0002_author_only.sql` и т.д.). Новые миграции на уже работающей базе
+   выполняются тем же способом.
 3. **Authentication → Sign In / Providers → Email**: **обязательно выключить Confirm email**. Вход в приложении по
    логину и паролю, а для Supabase логин превращается в служебный адрес `логин@trip.local`, на который письма не
    доходят.
