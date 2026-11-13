@@ -46,7 +46,7 @@ export default function ExpenseForm() {
   // сервер отклонил сохранение — открываем то, что человек ввёл, а не старую версию с сервера
   const rejected = queue.find((i) => i.id === expenseId && i.kind === 'expense' && i.error)
   const fromServer = expenseId ? expenses.find((e) => e.id === expenseId) : undefined
-  const editing = useMemo(() => (rejected ? queuedExpense(rejected, me) : fromServer), [rejected, fromServer, me])
+  const editing = useMemo(() => (rejected ? queuedExpense(rejected, me, fromServer) : fromServer), [rejected, fromServer, me])
   // чужой расход — только просмотр (сервер тоже не даст изменить или удалить)
   const readOnly = !!editing && !canModify(editing, me)
   const quick = useMemo(() => quickTitles(expenses.filter((e) => !e.pending)), [expenses])

@@ -14,16 +14,17 @@ import {
   Bell, CheckCheck, ChevronLeft, CloudUpload, HandCoins, Pencil, Receipt, RefreshCw, Scale, Settings, Trash2, Wallet, WifiOff,
 } from 'lucide-react'
 import type { CashOp, Expense, Settlement, Trip } from '../types'
-import { discard, flushOutbox, forgetSent, retry, useOutbox, type OutboxItem } from '../lib/outbox'
+import { discard, flushOutbox, forgetSent, outboxSnapshot, retry, useOutbox, type OutboxItem } from '../lib/outbox'
 
 /** Расход из записи очереди — в том виде, в каком он будет на сервере. */
-export function queuedExpense(i: OutboxItem, me: string): Expense {
+export function queuedExpense(i: OutboxItem, me: string, existing?: Expense): Expense {
   const p = i.payload as Record<string, never>
   return {
     id: p.p_id, trip_id: p.p_trip_id, paid_by: p.p_paid_by, title: p.p_title, note: p.p_note || null,
     amount: p.p_amount, currency: p.p_currency, rate: p.p_rate, amount_base: p.p_amount_base,
     method: p.p_method, bank: p.p_bank, split_mode: p.p_split_mode, spent_at: p.p_spent_at,
-    created_by: me, created_at: i.createdAt, shares: p.p_shares,
+    // правка уже существующего — автор и дата создания остаются прежними
+    created_by: existing?.created_by ?? me, created_at: existing?.created_at ?? i.createdAt, shares: p.p_shares,
     pending: !i.sent, syncing: !i.sent && !i.stalled,
   }
 }
@@ -38,8 +39,8 @@ function mergePending(data: TripData, pending: OutboxItem[], me: string) {
   const cashOps = [...data.cashOps]
   for (const i of ok) {
     if (i.kind === 'expense') {
-      const e = queuedExpense(i, me)
-      const at = expenses.findIndex((x) => x.id === e.id)
+      const at = expenses.findIndex((x) => x.id === i.id)
+      const e = queuedExpense(i, me, at >= 0 ? expenses[at] : undefined)
       if (at >= 0) expenses[at] = e
       else expenses.push(e)
     } else if (i.kind === 'expense-delete') {
@@ -54,6 +55,9 @@ function mergePending(data: TripData, pending: OutboxItem[], me: string) {
   expenses.sort((a, b) => b.spent_at.localeCompare(a.spent_at))
   return { ...data, expenses, settlements, cashOps }
 }
+
+// какие отказы сервера уже показаны тостом — живёт дольше экрана поездки
+const toasted = new Set<string>()
 
 export type TripCtx = Omit<TripData, 'trip'> & {
   trip: Trip
@@ -89,28 +93,34 @@ export default function TripLayout() {
     } else setShowNews(true)
   }
 
-  // сервер принял записи — перезагружаем список и только потом убираем их из очереди, чтобы ничего не мигало
-  const sentKey = pending.filter((i) => i.sent).map((i) => `${i.id}@${i.createdAt}`).join()
-  const pendingRef = useRef(pending)
-  pendingRef.current = pending
-  const { reload } = raw
+  // сервер принял записи — убираем их из очереди только после удачной загрузки, начатой уже после этого,
+  // иначе запись мигнёт. Загрузку запускает сам useTripData (он перезагружается на каждое изменение очереди,
+  // а при неудаче — по realtime/online/фокусу), здесь только ждём её номер
+  const { startedSeq, loadedSeq } = raw
+  const forgetAfter = useRef(new Map<OutboxItem, number>())
   useEffect(() => {
-    if (!sentKey) return
-    const sent = pendingRef.current.filter((i) => i.sent)
-    let live = true
-    void reload().then(() => live && forgetSent(sent))
-    return () => {
-      live = false
-    }
-  }, [sentKey, reload])
+    const live = new Set(pending)
+    for (const i of forgetAfter.current.keys()) if (!live.has(i)) forgetAfter.current.delete(i) // заменена или удалена
+    const need = startedSeq() + 1
+    for (const i of pending) if (i.sent && !forgetAfter.current.has(i)) forgetAfter.current.set(i, need)
+  }, [pending, startedSeq])
+  useEffect(() => {
+    const done = [...forgetAfter.current].filter(([, need]) => need <= loadedSeq).map(([i]) => i)
+    if (!done.length) return
+    for (const i of done) forgetAfter.current.delete(i)
+    forgetSent(done)
+  }, [loadedSeq])
 
   // сервер отклонил запись — сообщаем; расход можно открыть и поправить, введённое не теряется
-  const toasted = useRef(new Set<string>())
   useEffect(() => {
+    // ключи ушедших и снова отправляемых записей забываем (по всей очереди, а не только этой поездки):
+    // повторный отказ после «Отправить» снова покажет тост, а возврат в поездку — нет
+    const failing = new Set(outboxSnapshot().filter((i) => i.error).map((i) => `${i.id}@${i.createdAt}`))
+    for (const k of toasted) if (!failing.has(k)) toasted.delete(k)
     for (const i of pending) {
       const key = `${i.id}@${i.createdAt}`
-      if (!i.error || toasted.current.has(key)) continue
-      toasted.current.add(key)
+      if (!i.error || toasted.has(key)) continue
+      toasted.add(key)
       toast.error(`Не сохранилось: ${i.label}`, {
         description: i.error,
         action:

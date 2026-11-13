@@ -1,7 +1,7 @@
 // Очередь отправки (localStorage). Расходы всегда сохраняются через неё: в списке запись видна сразу,
 // а на сервер уходит в фоне; без интернета ждёт и отправляется сама. Наличные и переводы кладутся сюда,
 // только когда нет сети. У каждой записи свой id, выданный на телефоне, поэтому повторная отправка не создаёт дублей.
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { errMsg, supabase } from './supabase'
 
 export type OutboxKind = 'expense' | 'expense-delete' | 'cash' | 'settlement'
@@ -129,7 +129,10 @@ export function flushOutbox(): Promise<void> {
         continue
       }
       if (isNetworkError(err) || isAuthHiccup(err.message)) {
-        patch({ stalled: true })
+        // сети нет — ждут все, а не только та, что упёрлась первой
+        let changed = false
+        const next = items.map((i) => (!i.error && !i.sent && !i.stalled ? ((changed = true), { ...i, stalled: true }) : i))
+        if (changed) commit(next)
         break
       }
       patch({ error: errMsg(err), stalled: false })
@@ -168,5 +171,5 @@ export const outboxSnapshot = snapshot
 
 export function useOutbox(tripId?: string): OutboxItem[] {
   const all = useSyncExternalStore(subscribeOutbox, snapshot, snapshot)
-  return tripId ? all.filter((i) => i.tripId === tripId) : all
+  return useMemo(() => (tripId ? all.filter((i) => i.tripId === tripId) : all), [all, tripId])
 }

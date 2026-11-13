@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import { supabaseConfigured } from './lib/supabase'
 import { AppSplash } from './components/Loading'
@@ -13,6 +13,12 @@ import ExpenseForm from './pages/ExpenseForm'
 import Summary from './pages/Summary'
 import CashWallet from './pages/CashWallet'
 import TripSettings from './pages/TripSettings'
+
+// при переходе между поездками экран монтируется заново: данные, загрузки и очередь одной поездки не попадают в другую
+function TripLayoutPerTrip() {
+  const { tripId } = useParams()
+  return <TripLayout key={tripId} />
+}
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { session, loading } = useAuth()
@@ -41,7 +47,7 @@ export default function App() {
           <Route path="/login" element={<Auth />} />
           <Route path="/" element={<RequireAuth><Trips /></RequireAuth>} />
           <Route path="/join/:code" element={<RequireAuth><Join /></RequireAuth>} />
-          <Route path="/t/:tripId" element={<RequireAuth><TripLayout /></RequireAuth>}>
+          <Route path="/t/:tripId" element={<RequireAuth><TripLayoutPerTrip /></RequireAuth>}>
             <Route index element={<TripExpenses />} />
             <Route path="new" element={<ExpenseForm />} />
             <Route path="e/:expenseId" element={<ExpenseForm key="edit" />} />

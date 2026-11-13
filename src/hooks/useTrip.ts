@@ -16,7 +16,9 @@ export interface TripData {
   error: string | null
   offline: boolean
   notFound: boolean // поездки нет или нет доступа (а не просто нет сети)
-  reload: () => Promise<void>
+  reload: () => Promise<boolean> // false — сеть/сервер не ответили, показаны старые данные
+  loadedSeq: number // номер последней применённой удачной загрузки
+  startedSeq: () => number // номер последней начатой загрузки (следующая получит +1)
 }
 
 export function useTripData(tripId: string | undefined): TripData {
@@ -30,9 +32,15 @@ export function useTripData(tripId: string | undefined): TripData {
   const [offline, setOffline] = useState(false)
   const [notFound, setNotFound] = useState(false)
   const loaded = useRef(false)
+  // загрузки нумеруются: ответ, который пришёл позже более свежей уже применённой, отбрасываем
+  const seq = useRef(0)
+  const applied = useRef(0)
+  const [loadedSeq, setLoadedSeq] = useState(0)
+  const startedSeq = useCallback(() => seq.current, [])
 
-  const reload = useCallback(async () => {
-    if (!tripId) return
+  const reload = useCallback(async (): Promise<boolean> => {
+    if (!tripId) return false
+    const my = ++seq.current
     const [t, m, e, s, c] = await Promise.all([
       supabase.from('trips').select('*').eq('id', tripId).single(),
       supabase
@@ -48,6 +56,7 @@ export function useTripData(tripId: string | undefined): TripData {
       supabase.from('settlements').select('*').eq('trip_id', tripId).order('created_at', { ascending: false }),
       supabase.from('cash_ops').select('*').eq('trip_id', tripId).order('happened_at', { ascending: false }),
     ])
+    if (my < applied.current) return false // устаревший ответ: уже показана более свежая загрузка
     const firstErr = t.error ?? m.error ?? e.error ?? s.error ?? c.error
     if (t.error?.code === 'PGRST116') {
       // строки нет: поездку удалили, ты из неё вышел или ссылка чужая
@@ -58,6 +67,8 @@ export function useTripData(tripId: string | undefined): TripData {
     } else if (firstErr) {
       // сеть/сервер: если данные уже есть — оставляем их и показываем плашку
       setOffline(true)
+      // более старый удачный ответ, пришедший после этой неудачи, уже не применяем
+      applied.current = Math.max(applied.current, my)
       if (!loaded.current) {
         // открыли без интернета — берём последний сохранённый снимок поездки
         let snap: { trip: Trip; members: Profile[]; expenses: Expense[]; settlements: Settlement[]; cashOps: CashOp[] } | null = null
@@ -110,6 +121,12 @@ export function useTripData(tripId: string | undefined): TripData {
       }
     }
     setLoading(false)
+    const ok = !firstErr || t.error?.code === 'PGRST116'
+    if (ok) {
+      applied.current = my
+      setLoadedSeq(my)
+    }
+    return ok
   }, [tripId])
 
   useEffect(() => {
@@ -159,5 +176,5 @@ export function useTripData(tripId: string | undefined): TripData {
 
   const memberById = useMemo(() => Object.fromEntries(members.map((m) => [m.id, m])), [members])
 
-  return { trip, members, memberById, expenses, settlements, cashOps, loading, error, offline, notFound, reload }
+  return { trip, members, memberById, expenses, settlements, cashOps, loading, error, offline, notFound, reload, loadedSeq, startedSeq }
 }

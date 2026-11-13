@@ -124,6 +124,22 @@ describe('офлайн-очередь', () => {
     expect(find('h3')).toMatchObject({ error: 'Удалить расход может только автор' })
   })
 
+  it('без сети «застревают» все неотправленные, а не только первая', async () => {
+    try {
+      replies.push({ error: { message: 'Failed to fetch' } })
+      ob.enqueue(item('k1'))
+      await ob.flushOutbox()
+      replies.push({ error: { message: 'Failed to fetch' } })
+      ob.enqueue(item('k2'))
+      await ob.flushOutbox()
+      expect(find('k1')).toMatchObject({ stalled: true })
+      expect(find('k2')).toMatchObject({ stalled: true })
+    } finally {
+      ob.discard('k1')
+      ob.discard('k2')
+    }
+  })
+
   it('isNetworkError отличает сеть от ошибок данных', () => {
     expect(ob.isNetworkError({ message: 'TypeError: Failed to fetch' })).toBe(true)
     expect(ob.isNetworkError({ message: 'Load failed' })).toBe(true)
