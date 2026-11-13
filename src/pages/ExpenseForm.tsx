@@ -260,7 +260,8 @@ export default function ExpenseForm() {
         </p>
       )}
 
-      <fieldset disabled={readOnly} className="contents">
+      {/* выбранные варианты остаются цветными — это информация; без hover, чтобы не выглядели нажимаемыми */}
+      <fieldset disabled={readOnly} className={readOnly ? 'contents [&_button]:pointer-events-none' : 'contents'}>
 
       {/* сумма и валюта */}
       <Card className="space-y-3">
@@ -454,7 +455,7 @@ export default function ExpenseForm() {
             )
           })}
         </Card>
-        {splitMode === 'equal' && (
+        {splitMode === 'equal' && !readOnly && (
           <div className="mt-1 flex gap-1 text-sm">
             <button type="button" className="inline-flex min-h-11 cursor-pointer items-center rounded-md px-2 font-medium text-primary hover:bg-accent" onClick={() => setForIds(members.map((m) => m.id))}>
               Все
