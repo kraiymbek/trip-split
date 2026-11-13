@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { useTripCtx } from './TripLayout'
 import { formatMoney } from '../lib/money'
 import { METHODS, methodLabel, type Expense, type PayMethod } from '../types'
-import { Clock, Plus, ReceiptText } from 'lucide-react'
+import { Clock, Loader2, Plus, ReceiptText } from 'lucide-react'
 import { Avatar, Card, Chip } from '../components/ui'
 import { MethodIcon } from '../components/PayPicker'
 
@@ -106,7 +106,12 @@ export default function TripExpenses() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 items-center gap-1.5 font-semibold">
-                      {e.pending && <Clock className="size-4 shrink-0 text-sky-600" aria-label="Ждёт отправки" />}
+                      {e.pending &&
+                        (e.syncing ? (
+                          <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-label="Сохраняется" />
+                        ) : (
+                          <Clock className="size-4 shrink-0 text-sky-600" aria-label="Ждёт отправки" />
+                        ))}
                       {unseenExpenses.has(e.id) && (
                         <span className="size-2 shrink-0 rounded-full bg-destructive" role="img" aria-label="Новое" />
                       )}

@@ -3,7 +3,7 @@ import { useNotices } from '../hooks/useNotices'
 import { getHomeTrip, setHomeTrip } from '../lib/homeTrip'
 import { useAuth } from '../auth'
 import { useTripData, type TripData } from '../hooks/useTrip'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '../components/ui'
 import { TripSkeleton } from '../components/Loading'
 import { Button as UiButton } from '@/components/ui/button'
@@ -14,32 +14,41 @@ import {
   Bell, CheckCheck, ChevronLeft, CloudUpload, HandCoins, Pencil, Receipt, RefreshCw, Scale, Settings, Trash2, Wallet, WifiOff,
 } from 'lucide-react'
 import type { CashOp, Expense, Settlement, Trip } from '../types'
-import { discard, flushOutbox, retry, useOutbox, type OutboxItem } from '../lib/outbox'
+import { discard, flushOutbox, forgetSent, retry, useOutbox, type OutboxItem } from '../lib/outbox'
 
-// Записи из офлайн-очереди показываем сразу, как будто уже сохранены (с пометкой pending)
+/** Расход из записи очереди — в том виде, в каком он будет на сервере. */
+export function queuedExpense(i: OutboxItem, me: string): Expense {
+  const p = i.payload as Record<string, never>
+  return {
+    id: p.p_id, trip_id: p.p_trip_id, paid_by: p.p_paid_by, title: p.p_title, note: p.p_note || null,
+    amount: p.p_amount, currency: p.p_currency, rate: p.p_rate, amount_base: p.p_amount_base,
+    method: p.p_method, bank: p.p_bank, split_mode: p.p_split_mode, spent_at: p.p_spent_at,
+    created_by: me, created_at: i.createdAt, shares: p.p_shares,
+    pending: !i.sent, syncing: !i.sent && !i.stalled,
+  }
+}
+
+// Записи из очереди показываем сразу, как будто уже сохранены: ждущие — с пометкой pending,
+// отправленные — как обычные, пока свежий список с сервера их не подхватит
 function mergePending(data: TripData, pending: OutboxItem[], me: string) {
   const ok = pending.filter((i) => !i.error)
   if (!ok.length) return data
-  const expenses = [...data.expenses]
+  let expenses = [...data.expenses]
   const settlements = [...data.settlements]
   const cashOps = [...data.cashOps]
   for (const i of ok) {
-    const p = i.payload as Record<string, never>
     if (i.kind === 'expense') {
-      const e: Expense = {
-        id: p.p_id, trip_id: p.p_trip_id, paid_by: p.p_paid_by, title: p.p_title, note: p.p_note || null,
-        amount: p.p_amount, currency: p.p_currency, rate: p.p_rate, amount_base: p.p_amount_base,
-        method: p.p_method, bank: p.p_bank, split_mode: p.p_split_mode, spent_at: p.p_spent_at,
-        created_by: me, created_at: i.createdAt, shares: p.p_shares, pending: true,
-      }
+      const e = queuedExpense(i, me)
       const at = expenses.findIndex((x) => x.id === e.id)
       if (at >= 0) expenses[at] = e
       else expenses.push(e)
+    } else if (i.kind === 'expense-delete') {
+      expenses = expenses.filter((x) => x.id !== i.id)
     } else if (i.kind === 'settlement') {
       if (!settlements.some((x) => x.id === i.id))
-        settlements.push({ ...(i.payload as unknown as Settlement), created_at: i.createdAt, pending: true })
+        settlements.push({ ...(i.payload as unknown as Settlement), created_at: i.createdAt, pending: !i.sent })
     } else if (!cashOps.some((x) => x.id === i.id)) {
-      cashOps.push({ ...(i.payload as unknown as CashOp), user_id: me, pending: true })
+      cashOps.push({ ...(i.payload as unknown as CashOp), user_id: me, pending: !i.sent })
     }
   }
   expenses.sort((a, b) => b.spent_at.localeCompare(a.spent_at))
@@ -51,6 +60,7 @@ export type TripCtx = Omit<TripData, 'trip'> & {
   me: string
   unseenExpenses: Set<string> // расходы, которые добавили/изменили другие, а я ещё не смотрел
   markExpenseSeen: (id: string) => void
+  queue: OutboxItem[] // очередь отправки этой поездки (в т.ч. отклонённые сервером)
 }
 
 export const useTripCtx = () => useOutletContext<TripCtx>()
@@ -62,6 +72,8 @@ export default function TripLayout() {
   const pending = useOutbox(tripId)
   const me = session?.user.id ?? ''
   const data = useMemo(() => mergePending(raw, pending, me), [raw, pending, me])
+  // в плашке — только то, что застряло без сети или отклонено; обычная фоновая отправка её не показывает
+  const waiting = pending.filter((i) => i.error || i.stalled)
   const [showPending, setShowPending] = useState(false)
   const [showNews, setShowNews] = useState(false)
   const news = useNotices(data, me, tripId)
@@ -76,6 +88,40 @@ export default function TripLayout() {
       nav(`${tripPath}/e/${expenseId}`)
     } else setShowNews(true)
   }
+
+  // сервер принял записи — перезагружаем список и только потом убираем их из очереди, чтобы ничего не мигало
+  const sentKey = pending.filter((i) => i.sent).map((i) => `${i.id}@${i.createdAt}`).join()
+  const pendingRef = useRef(pending)
+  pendingRef.current = pending
+  const { reload } = raw
+  useEffect(() => {
+    if (!sentKey) return
+    const sent = pendingRef.current.filter((i) => i.sent)
+    let live = true
+    void reload().then(() => live && forgetSent(sent))
+    return () => {
+      live = false
+    }
+  }, [sentKey, reload])
+
+  // сервер отклонил запись — сообщаем; расход можно открыть и поправить, введённое не теряется
+  const toasted = useRef(new Set<string>())
+  useEffect(() => {
+    for (const i of pending) {
+      const key = `${i.id}@${i.createdAt}`
+      if (!i.error || toasted.current.has(key)) continue
+      toasted.current.add(key)
+      toast.error(`Не сохранилось: ${i.label}`, {
+        description: i.error,
+        action:
+          i.kind === 'expense'
+            ? { label: 'Исправить', onClick: () => nav(`${tripPath}/e/${i.id}`) }
+            : { label: 'Показать', onClick: () => setShowPending(true) },
+      })
+    }
+    // nav/tripPath не меняются в пределах поездки
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending])
 
   // отмеченная «при запуске» поездка удалена или ты из неё вышел — снимаем отметку, чтобы не открывать её каждый раз
   useEffect(() => {
@@ -118,6 +164,7 @@ export default function TripLayout() {
     me,
     unseenExpenses: news.unseenExpenses,
     markExpenseSeen: news.markExpense,
+    queue: pending,
   }
   const closeNews = () => {
     setShowNews(false)
@@ -219,13 +266,13 @@ export default function TripLayout() {
           </Alert>
         )}
 
-        {pending.length > 0 && (
+        {waiting.length > 0 && (
           <Alert className="border-sky-200 bg-sky-50 text-sky-950">
             <CloudUpload />
             <AlertTitle className="flex items-center justify-between gap-2">
               <span>
-                {pending.length} {pending.length === 1 ? 'запись ждёт' : 'записи ждут'} отправки
-                {pending.some((i) => i.error) && <span className="text-destructive"> · есть ошибка</span>}
+                {waiting.length} {waiting.length === 1 ? 'запись ждёт' : 'записи ждут'} отправки
+                {waiting.some((i) => i.error) && <span className="text-destructive"> · есть ошибка</span>}
               </span>
               <button className="-my-2 min-h-11 cursor-pointer px-1 text-sm font-semibold text-sky-800 underline underline-offset-2" aria-expanded={showPending} onClick={() => setShowPending((v) => !v)}>
                 {showPending ? 'скрыть' : 'показать'}
@@ -233,13 +280,20 @@ export default function TripLayout() {
             </AlertTitle>
             {showPending && (
               <AlertDescription className="mt-2 space-y-2">
-                {pending.map((i) => (
+                {waiting.map((i) => (
                   <div key={i.id} className="w-full rounded-lg border bg-card px-3 py-2 text-foreground">
                     <div className="font-medium">{i.label}</div>
                     <div className={i.error ? 'text-xs text-destructive' : 'text-xs text-muted-foreground'}>
                       {i.error ? `Сервер не принял: ${i.error}` : 'Отправится само, когда появится интернет'}
                     </div>
                     <div className="mt-1 flex gap-1">
+                      {i.error && i.kind === 'expense' && (
+                        <UiButton asChild variant="ghost" className="px-2 text-primary">
+                          <Link to={`${tripPath}/e/${i.id}`}>
+                            <Pencil /> Исправить
+                          </Link>
+                        </UiButton>
+                      )}
                       <UiButton variant="ghost" className="px-2 text-primary" onClick={() => retry(i.id)}>
                         <RefreshCw /> Отправить
                       </UiButton>

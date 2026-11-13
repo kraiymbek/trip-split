@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { useTripCtx } from './TripLayout'
+import { queuedExpense, useTripCtx } from './TripLayout'
 import { baseToCustom, customToBase, splitEqual, type ShareLike } from '../lib/balance'
 import {
   CURRENCIES,
@@ -13,8 +13,7 @@ import {
   parseRate,
 } from '../lib/money'
 import { fetchRate } from '../lib/rates'
-import { errMsg, supabase } from '../lib/supabase'
-import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
+import { enqueue, uuid } from '../lib/outbox'
 import type { PayMethod } from '../types'
 import { PayPicker, lastBank } from '../components/PayPicker'
 import { lastUsed, quickTitles } from '../lib/quick'
@@ -41,10 +40,13 @@ const lsSet = (k: string, v: string) => {
 }
 
 export default function ExpenseForm() {
-  const { trip, members, memberById, expenses, me, markExpenseSeen, unseenExpenses, reload } = useTripCtx()
+  const { trip, members, memberById, expenses, me, markExpenseSeen, unseenExpenses, queue } = useTripCtx()
   const { expenseId } = useParams()
   const nav = useNavigate()
-  const editing = expenseId ? expenses.find((e) => e.id === expenseId) : undefined
+  // сервер отклонил сохранение — открываем то, что человек ввёл, а не старую версию с сервера
+  const rejected = queue.find((i) => i.id === expenseId && i.kind === 'expense' && i.error)
+  const fromServer = expenseId ? expenses.find((e) => e.id === expenseId) : undefined
+  const editing = useMemo(() => (rejected ? queuedExpense(rejected, me) : fromServer), [rejected, fromServer, me])
   // чужой расход — только просмотр (сервер тоже не даст изменить или удалить)
   const readOnly = !!editing && !canModify(editing, me)
   const quick = useMemo(() => quickTitles(expenses.filter((e) => !e.pending)), [expenses])
@@ -82,11 +84,10 @@ export default function ExpenseForm() {
       : {},
   )
   const [date, setDate] = useState(toDateInput(editing ? new Date(editing.spent_at) : new Date()))
-  const [busy, setBusy] = useState(false)
-  const [deleting, setDeleting] = useState(false)
   // id выдаём заранее: повторная отправка из офлайн-очереди не создаст дубль
   const expenseUid = useRef(editing?.id ?? uuid())
-  const [error, setError] = useState('')
+  const [error, setError] = useState(rejected?.error ? `Сервер не принял: ${rejected.error}` : '')
+  const sent = useRef(false) // защита от двойного нажатия
   const [otherCur, setOtherCur] = useState(!QUICK_CURRENCIES.includes(currency) && currency !== base)
 
   // курс: подтягиваем автоматически при смене валюты/даты (но не при открытии старого расхода)
@@ -193,7 +194,6 @@ export default function ExpenseForm() {
     else if (date === toDateInput(new Date())) spentAt = new Date().toISOString()
     else spentAt = new Date(`${date}T12:00:00`).toISOString()
 
-    setBusy(true)
     const payload = {
       p_id: expenseUid.current,
       p_create: !editing || !!editing.pending, // ожидающий в очереди на сервере ещё не создан
@@ -211,46 +211,24 @@ export default function ExpenseForm() {
       p_spent_at: spentAt,
       p_shares: shares,
     }
-    let error: { message: string } | null
-    try {
-      error = (await supabase.rpc('save_expense', payload)).error
-    } catch (e) {
-      error = { message: e instanceof Error ? e.message : String(e) }
-    }
-    setBusy(false)
-    if (error && isNetworkError(error)) {
-      // нет интернета — сохраняем на телефоне, отправится само
-      enqueue({
-        id: expenseUid.current,
-        tripId: trip.id,
-        kind: 'expense',
-        payload,
-        label: `${editing ? 'Изменение: ' : ''}${title.trim()} · ${formatMoney(amount, currency)}`,
-      })
-      return nav(`/t/${trip.id}`, { replace: true })
-    }
-    if (error) return setError(errMsg(error))
+    if (sent.current) return
+    sent.current = true
+    // список покажет расход сразу, на сервер он уйдёт в фоне (без сети — когда появится)
+    enqueue({
+      id: expenseUid.current,
+      tripId: trip.id,
+      kind: 'expense',
+      payload,
+      label: `${editing ? 'Изменение: ' : ''}${title.trim()} · ${formatMoney(amount, currency)}`,
+    })
     nav(`/t/${trip.id}`, { replace: true })
   }
 
-  async function remove() {
-    if (!editing || !confirm(`Удалить «${editing.title}»?`)) return
-    if (editing.pending) {
-      discard(editing.id) // ещё не отправлен — просто убираем из очереди
-      return nav(`/t/${trip.id}`, { replace: true })
-    }
-    setBusy(true)
-    setDeleting(true)
-    // без прав RLS не возвращает ошибку, а просто ничего не удаляет — проверяем, что строка ушла
-    const { data, error } = await supabase.from('expenses').delete().eq('id', editing.id).select('id')
-    const fail = error ? errMsg(error) : !data?.length ? 'Удалить расход может только автор' : null
-    if (fail) {
-      setBusy(false)
-      setDeleting(false)
-      return setError(fail)
-    }
-    // ждём свежий список, чтобы удалённый расход не висел в нём до realtime-события
-    await reload()
+  function remove() {
+    if (!editing || sent.current || !confirm(`Удалить «${editing.title}»?`)) return
+    sent.current = true
+    // заменяет в очереди несохранённую версию; если расход так и не создался, сервер просто ничего не найдёт
+    enqueue({ id: editing.id, tripId: trip.id, kind: 'expense-delete', payload: {}, label: `Удаление: ${editing.title}` })
     nav(`/t/${trip.id}`, { replace: true })
   }
 
@@ -507,23 +485,15 @@ export default function ExpenseForm() {
           {readOnly ? 'Назад' : 'Отмена'}
         </Button>
         {!readOnly && (
-          <Button className="flex-[2]" disabled={busy}>
-            {busy && !deleting ? <Loader2 className="animate-spin" /> : <Check />}
+          <Button className="flex-[2]">
+            <Check />
             Сохранить
           </Button>
         )}
       </div>
       {editing && !readOnly && (
-        <Button type="button" variant="danger" className="w-full" onClick={remove} disabled={busy}>
-          {deleting ? (
-            <>
-              <Loader2 className="animate-spin" /> Удаляю…
-            </>
-          ) : (
-            <>
-              <Trash2 /> Удалить расход
-            </>
-          )}
+        <Button type="button" variant="danger" className="w-full" onClick={remove}>
+          <Trash2 /> Удалить расход
         </Button>
       )}
     </form>

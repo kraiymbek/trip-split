@@ -1,10 +1,10 @@
-// Офлайн-очередь: если при сохранении нет интернета, запись кладётся сюда (localStorage)
-// и отправляется сама, когда сеть появится. У каждой записи свой id, выданный на телефоне,
-// поэтому повторная отправка не создаёт дублей.
+// Очередь отправки (localStorage). Расходы всегда сохраняются через неё: в списке запись видна сразу,
+// а на сервер уходит в фоне; без интернета ждёт и отправляется сама. Наличные и переводы кладутся сюда,
+// только когда нет сети. У каждой записи свой id, выданный на телефоне, поэтому повторная отправка не создаёт дублей.
 import { useSyncExternalStore } from 'react'
 import { errMsg, supabase } from './supabase'
 
-export type OutboxKind = 'expense' | 'cash' | 'settlement'
+export type OutboxKind = 'expense' | 'expense-delete' | 'cash' | 'settlement'
 
 export interface OutboxItem {
   id: string // id записи — он же id строки в базе
@@ -14,6 +14,8 @@ export interface OutboxItem {
   label: string // «Ужин на пляже · 2 450 ฿» — для показа в списке
   createdAt: string
   error?: string // сервер отклонил запись — нужно решение человека
+  stalled?: boolean // попытка упёрлась в сеть — ждём интернета
+  sent?: boolean // сервер принял; держим, пока список не перезагрузится (см. forgetSent)
 }
 
 const KEY = 'ts:outbox'
@@ -61,9 +63,16 @@ export function isNetworkError(e: unknown): boolean {
 // протухший токен после долгого офлайна — тоже временная проблема
 const isAuthHiccup = (m: string) => /JWT|token|Auth session missing/i.test(m)
 
+/** Положить в очередь (заменяет запись с тем же id) и сразу попробовать отправить. */
 export function enqueue(item: Omit<OutboxItem, 'createdAt'>) {
   commit([...items.filter((i) => i.id !== item.id), { ...item, createdAt: new Date().toISOString() }])
-  scheduleRetry()
+  void flushOutbox()
+}
+
+/** Убрать отправленные записи — после того как свежий список с сервера их уже содержит. */
+export function forgetSent(sent: OutboxItem[]) {
+  const done = new Set(sent)
+  if (items.some((i) => done.has(i))) commit(items.filter((i) => !done.has(i)))
 }
 
 export function discard(id: string) {
@@ -71,7 +80,7 @@ export function discard(id: string) {
 }
 
 export function retry(id: string) {
-  commit(items.map((i) => (i.id === id ? { ...i, error: undefined } : i)))
+  commit(items.map((i) => (i.id === id ? { ...i, error: undefined, stalled: false } : i)))
   return flushOutbox()
 }
 
@@ -79,6 +88,15 @@ async function send(item: OutboxItem): Promise<{ message: string; code?: string 
   if (item.kind === 'expense') {
     const { error } = await supabase.rpc('save_expense', item.payload)
     return error
+  }
+  if (item.kind === 'expense-delete') {
+    // без прав RLS не возвращает ошибку, а просто ничего не удаляет — поэтому проверяем, осталась ли строка
+    const del = await supabase.from('expenses').delete().eq('id', item.id).select('id')
+    if (del.error) return del.error
+    if (del.data?.length) return null
+    const left = await supabase.from('expenses').select('id').eq('id', item.id).maybeSingle()
+    if (left.error) return left.error
+    return left.data ? { message: 'Удалить расход может только автор' } : null // нет строки — уже удалён или не был создан
   }
   const table = item.kind === 'cash' ? 'cash_ops' : 'settlements'
   const { error } = await supabase.from(table).insert(item.payload)
@@ -88,24 +106,33 @@ async function send(item: OutboxItem): Promise<{ message: string; code?: string 
 
 let flushing: Promise<void> | null = null
 
-/** Отправить всё, что ждёт. Останавливается на первой сетевой ошибке. */
+/** Отправить всё, что ждёт, по порядку. Останавливается на первой сетевой ошибке.
+ *  Записи, добавленные во время отправки, уходят в том же проходе. */
 export function flushOutbox(): Promise<void> {
   if (flushing) return flushing
   flushing = (async () => {
-    for (const item of [...items]) {
-      if (item.error) continue
+    const tried = new Set<OutboxItem>()
+    for (;;) {
+      const item = items.find((i) => !i.error && !i.sent && !tried.has(i))
+      if (!item) break
+      tried.add(item)
       let err: { message: string } | null
       try {
         err = await send(item)
       } catch (e) {
         err = { message: e instanceof Error ? e.message : String(e) }
       }
+      // сравниваем по ссылке: если запись заменили, пока она летела, новую версию не трогаем
+      const patch = (p: Partial<OutboxItem>) => commit(items.map((i) => (i === item ? { ...i, ...p } : i)))
       if (!err) {
-        commit(items.filter((i) => i.id !== item.id))
+        patch({ sent: true, stalled: false })
         continue
       }
-      if (isNetworkError(err) || isAuthHiccup(err.message)) break
-      commit(items.map((i) => (i.id === item.id ? { ...i, error: errMsg(err) } : i)))
+      if (isNetworkError(err) || isAuthHiccup(err.message)) {
+        patch({ stalled: true })
+        break
+      }
+      patch({ error: errMsg(err), stalled: false })
     }
   })().finally(() => {
     flushing = null
@@ -117,7 +144,7 @@ export function flushOutbox(): Promise<void> {
 let timer: ReturnType<typeof setTimeout> | undefined
 function scheduleRetry() {
   clearTimeout(timer)
-  if (items.some((i) => !i.error)) timer = setTimeout(flushOutbox, 20_000)
+  if (items.some((i) => !i.error && !i.sent)) timer = setTimeout(flushOutbox, 20_000)
 }
 
 if (typeof window !== 'undefined') {
@@ -137,6 +164,7 @@ export function subscribeOutbox(f: () => void) {
 }
 
 const snapshot = () => items
+export const outboxSnapshot = snapshot
 
 export function useOutbox(tripId?: string): OutboxItem[] {
   const all = useSyncExternalStore(subscribeOutbox, snapshot, snapshot)

@@ -42,6 +42,7 @@ export interface Expense {
   updated_by?: string
   shares: Share[]
   pending?: boolean // лежит в офлайн-очереди
+  syncing?: boolean // из очереди и прямо сейчас отправляется (а не ждёт сети)
 }
 
 export interface Settlement {
