@@ -41,7 +41,7 @@ const lsSet = (k: string, v: string) => {
 }
 
 export default function ExpenseForm() {
-  const { trip, members, memberById, expenses, me, markExpenseSeen, unseenExpenses } = useTripCtx()
+  const { trip, members, memberById, expenses, me, markExpenseSeen, unseenExpenses, reload } = useTripCtx()
   const { expenseId } = useParams()
   const nav = useNavigate()
   const editing = expenseId ? expenses.find((e) => e.id === expenseId) : undefined
@@ -83,6 +83,7 @@ export default function ExpenseForm() {
   )
   const [date, setDate] = useState(toDateInput(editing ? new Date(editing.spent_at) : new Date()))
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   // id выдаём заранее: повторная отправка из офлайн-очереди не создаст дубль
   const expenseUid = useRef(editing?.id ?? uuid())
   const [error, setError] = useState('')
@@ -239,11 +240,17 @@ export default function ExpenseForm() {
       return nav(`/t/${trip.id}`, { replace: true })
     }
     setBusy(true)
+    setDeleting(true)
     // без прав RLS не возвращает ошибку, а просто ничего не удаляет — проверяем, что строка ушла
     const { data, error } = await supabase.from('expenses').delete().eq('id', editing.id).select('id')
-    setBusy(false)
-    if (error) return setError(errMsg(error))
-    if (!data?.length) return setError('Удалить расход может только автор')
+    const fail = error ? errMsg(error) : !data?.length ? 'Удалить расход может только автор' : null
+    if (fail) {
+      setBusy(false)
+      setDeleting(false)
+      return setError(fail)
+    }
+    // ждём свежий список, чтобы удалённый расход не висел в нём до realtime-события
+    await reload()
     nav(`/t/${trip.id}`, { replace: true })
   }
 
@@ -501,14 +508,22 @@ export default function ExpenseForm() {
         </Button>
         {!readOnly && (
           <Button className="flex-[2]" disabled={busy}>
-            {busy ? <Loader2 className="animate-spin" /> : <Check />}
+            {busy && !deleting ? <Loader2 className="animate-spin" /> : <Check />}
             Сохранить
           </Button>
         )}
       </div>
       {editing && !readOnly && (
         <Button type="button" variant="danger" className="w-full" onClick={remove} disabled={busy}>
-          <Trash2 /> Удалить расход
+          {deleting ? (
+            <>
+              <Loader2 className="animate-spin" /> Удаляю…
+            </>
+          ) : (
+            <>
+              <Trash2 /> Удалить расход
+            </>
+          )}
         </Button>
       )}
     </form>
