@@ -1,4 +1,4 @@
-import { Link, NavLink, Outlet, useNavigate, useOutletContext, useParams } from 'react-router-dom'
+import { Link, NavLink, Outlet, useMatch, useNavigate, useOutletContext, useParams } from 'react-router-dom'
 import { useNotices } from '../hooks/useNotices'
 import { getHomeTrip, setHomeTrip } from '../lib/homeTrip'
 import { useAuth } from '../auth'
@@ -67,6 +67,9 @@ export default function TripLayout() {
   const news = useNotices(data, me, tripId)
   const nav = useNavigate()
   const tripPath = `/t/${tripId}`
+  const editMatch = useMatch('/t/:tripId/e/:expenseId')
+  const newMatch = useMatch('/t/:tripId/new')
+  const inExpense = !!(editMatch || newMatch)
   const openNotice = (expenseId?: string) => {
     if (expenseId) {
       setShowNews(false)
@@ -128,8 +131,8 @@ export default function TripLayout() {
   return (
     <div className="mx-auto min-h-dvh max-w-md pb-[calc(env(safe-area-inset-bottom)+5.5rem)]">
       <header className="sticky top-0 z-10 flex items-center gap-1 border-b border-transparent bg-background/85 px-2 pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 backdrop-blur-md">
-        <UiButton asChild variant="ghost" size="icon" aria-label="К списку поездок">
-          <Link to="/">
+        <UiButton asChild variant="ghost" size="icon" aria-label={inExpense ? 'К списку расходов' : 'К списку поездок'}>
+          <Link to={inExpense ? tripPath : '/'}>
             <ChevronLeft className="size-6" />
           </Link>
         </UiButton>
