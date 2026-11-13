@@ -8,6 +8,16 @@ import { Avatar, Card, Chip } from '../components/ui'
 import { MethodIcon } from '../components/PayPicker'
 
 const dayFmt = new Intl.DateTimeFormat('ru-RU', { weekday: 'short', day: 'numeric', month: 'long' })
+const timeFmt = new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit' })
+const dayTimeFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const sameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString()
+
+// когда расход внесли; дату добавляем, только если внесли не в тот день, под которым он стоит
+function addedAt(e: Expense): string {
+  if (!e.created_at) return ''
+  const c = new Date(e.created_at)
+  return (sameDay(c, new Date(e.spent_at)) ? timeFmt : dayTimeFmt).format(c)
+}
 
 export default function TripExpenses() {
   const { trip, expenses, members, memberById, me, unseenExpenses } = useTripCtx()
@@ -109,6 +119,11 @@ export default function TripExpenses() {
                     <span className="flex min-w-0 items-center gap-1">
                       <MethodIcon m={e.method} className="size-3.5 shrink-0" />
                       <span className="truncate">
+                        {e.created_at && (
+                          <time dateTime={e.created_at} className="tabular">
+                            {addedAt(e)} ·{' '}
+                          </time>
+                        )}
                         {e.paid_by === me ? 'Я' : (memberById[e.paid_by]?.name ?? '?')} · {methodLabel(e.method, e.bank)} ·{' '}
                         {forWhom(e)}
                       </span>

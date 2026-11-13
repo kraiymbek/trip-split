@@ -23,6 +23,7 @@ import { canModify } from '../lib/rights'
 import { Avatar, Button, Card, Chip, ErrorBox, Label, inputCls } from '../components/ui'
 
 const pad = (n: number) => String(n).padStart(2, '0')
+const addedFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 const toDateInput = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 const lsGet = (k: string) => {
   try {
@@ -253,6 +254,11 @@ export default function ExpenseForm() {
       <h2 className="text-2xl font-bold tracking-tight">
         {readOnly ? 'Расход' : editing ? 'Изменить расход' : 'Новый расход'}
       </h2>
+      {editing?.created_at && (
+        <p className="-mt-3 text-sm text-muted-foreground">
+          Добавлен <time dateTime={editing.created_at}>{addedFmt.format(new Date(editing.created_at))}</time>
+        </p>
+      )}
       {readOnly && (
         <p className="flex items-center gap-2 rounded-xl bg-muted px-3 py-2.5 text-sm text-muted-foreground">
           <Lock className="size-4 shrink-0" aria-hidden />

@@ -30,7 +30,7 @@ function mergePending(data: TripData, pending: OutboxItem[], me: string) {
         id: p.p_id, trip_id: p.p_trip_id, paid_by: p.p_paid_by, title: p.p_title, note: p.p_note || null,
         amount: p.p_amount, currency: p.p_currency, rate: p.p_rate, amount_base: p.p_amount_base,
         method: p.p_method, bank: p.p_bank, split_mode: p.p_split_mode, spent_at: p.p_spent_at,
-        created_by: me, shares: p.p_shares, pending: true,
+        created_by: me, created_at: i.createdAt, shares: p.p_shares, pending: true,
       }
       const at = expenses.findIndex((x) => x.id === e.id)
       if (at >= 0) expenses[at] = e
