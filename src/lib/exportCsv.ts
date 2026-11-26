@@ -1,6 +1,6 @@
 // Экспорт поездки в CSV, который нормально открывается в Excel (RU), Numbers и Google Таблицах:
 // разделитель «;», дробная часть через запятую, BOM для кириллицы.
-import { computeStats, computeWallet, simplifyDebts } from './balance'
+import { computeStats, computeWallet, pairwiseDebts } from './balance'
 import type { CashOp, Expense, Profile, Settlement, Trip } from '../types'
 import { bankLabel } from '../types'
 
@@ -31,7 +31,7 @@ export function buildTripCsv(d: ExportData): string {
   const name = (id: string) => d.memberById[id]?.name ?? 'Бывший участник'
   const ids = d.members.map((m) => m.id)
   const stats = computeStats(ids, d.expenses, d.settlements)
-  const transfers = simplifyDebts(Object.fromEntries(Object.entries(stats).map(([k, v]) => [k, v.balance])))
+  const transfers = pairwiseDebts(d.expenses, d.settlements)
   const L: string[] = []
 
   L.push(row(`Поездка: ${d.trip.name}`), row(`Выгружено: ${date(new Date().toISOString())}`, `Валюта итогов: ${base}`), '')

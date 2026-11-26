@@ -1,3 +1,5 @@
+import { crossRate } from './rates'
+
 // Чистые функции расчёта долгов. Все суммы — целые числа в сотых долях базовой валюты.
 
 export type PayMethod = 'card' | 'cash'
@@ -105,31 +107,6 @@ export function computeBalances(
   return Object.fromEntries(Object.entries(stats).map(([id, s]) => [id, s.balance]))
 }
 
-/** Минимизирует число переводов: самый крупный должник платит самому крупному кредитору. */
-export function simplifyDebts(balances: Record<string, number>): Transfer[] {
-  const debtors = Object.entries(balances)
-    .filter(([, b]) => b < 0)
-    .map(([id, b]) => ({ id, amt: -b }))
-  const creditors = Object.entries(balances)
-    .filter(([, b]) => b > 0)
-    .map(([id, b]) => ({ id, amt: b }))
-  const out: Transfer[] = []
-
-  while (debtors.length && creditors.length) {
-    debtors.sort((a, b) => b.amt - a.amt)
-    creditors.sort((a, b) => b.amt - a.amt)
-    const d = debtors[0]
-    const c = creditors[0]
-    const amount = Math.min(d.amt, c.amt)
-    out.push({ from: d.id, to: c.id, amount })
-    d.amt -= amount
-    c.amt -= amount
-    if (d.amt === 0) debtors.shift()
-    if (c.amt === 0) creditors.shift()
-  }
-  return out
-}
-
 /** Долги по каждой паре: кто за кого платил, минус возвраты между ними; встречные долги взаимозачитываются. */
 export function pairwiseDebts(expenses: ExpenseLike[], settlements: SettlementLike[]): Transfer[] {
   const net = new Map<string, number>() // ключ «a|b» при a < b: > 0 — a должен b, < 0 — b должен a
@@ -229,4 +206,79 @@ export function computeWallet(
   }
   for (const l of Object.values(w)) l.balance = l.added - l.exchangedOut - l.spent + l.settled
   return w
+}
+
+// ───────────── пересчёт в другую валюту по курсу на день оплаты ─────────────
+
+export interface DatedExpense extends ExpenseLike {
+  amount: number // в валюте расхода
+  currency: string
+  spent_at: string
+}
+export interface DatedSettlement extends SettlementLike {
+  created_at: string
+}
+
+/** Тенге за единицу валюты на день YYYY-MM-DD (Нацбанк РК) — или undefined, если курса нет. */
+export type KztRatesByDay = (day: string) => Record<string, number> | undefined
+
+// день оплаты — по времени Алматы (как у Нацбанка), чтобы у всех участников курс был один и тот же
+const almatyDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Almaty' })
+export const dayOf = (iso: string) => almatyDay.format(new Date(iso))
+
+/** Дни, на которые нужны курсы, чтобы пересчитать поездку. */
+export function daysToConvert(expenses: DatedExpense[], settlements: DatedSettlement[]): string[] {
+  return [...new Set([...expenses.map((e) => dayOf(e.spent_at)), ...settlements.map((s) => dayOf(s.created_at))])].sort()
+}
+
+/** Расходы и возвраты в валюте `to`: каждый расход — по курсу на свой день; расход в `to` берётся как есть.
+ *  Доли пересчитываются так, что их сумма точно равна сумме расхода. Возврат — по тому же среднему курсу,
+ *  что и долги этой пары: иначе закрытый в базовой валюте долг из-за разницы курсов «ожил» бы на копейки.
+ *  null — если для какого-то дня или валюты нет курса. */
+export function convertTrip<E extends DatedExpense, S extends DatedSettlement>(
+  expenses: E[],
+  settlements: S[],
+  base: string,
+  to: string,
+  rates: KztRatesByDay,
+): { expenses: E[]; settlements: S[] } | null {
+  const outE: E[] = []
+  const debt = new Map<string, { base: number; to: number }>() // «должник>кредитор» — его долги в обеих валютах
+  for (const e of expenses) {
+    const kzt = rates(dayOf(e.spent_at))
+    const direct = e.currency === to ? 1 : kzt && crossRate(kzt, e.currency, to)
+    if (!direct) return null
+    const total = Math.round(e.amount * direct)
+    // доли — в той же пропорции, что и в базовой валюте (курс в самом расходе мог отличаться от курса Нацбанка)
+    const vals = Object.fromEntries(e.shares.map((s) => [s.user_id, s.share_base]))
+    const k = e.amount_base ? total / e.amount_base : 0
+    const shares = customToBase(vals, k, total)
+    outE.push({ ...e, amount_base: total, shares })
+    for (const sh of shares) {
+      if (sh.user_id === e.paid_by) continue
+      const key = `${sh.user_id}>${e.paid_by}`
+      const d = debt.get(key) ?? { base: 0, to: 0 }
+      d.base += vals[sh.user_id] ?? 0
+      d.to += sh.share_base
+      debt.set(key, d)
+    }
+  }
+  const outS: S[] = []
+  for (const s of settlements) {
+    // возврат гасит долги отправителя получателю — по их курсу; излишек — по курсу встречных долгов,
+    // а если общих расходов не было — по курсу на день возврата
+    const own = debt.get(`${s.from_user}>${s.to_user}`)
+    const back = debt.get(`${s.to_user}>${s.from_user}`)
+    const kzt = rates(dayOf(s.created_at))
+    const dayRate = base === to ? 1 : kzt ? crossRate(kzt, base, to) : null
+    const rateOf = (d?: { base: number; to: number }) => (d && d.base ? d.to / d.base : null)
+    const covered = Math.min(s.amount_base, Math.max(0, own?.base ?? 0))
+    const r1 = rateOf(own)
+    const r2 = rateOf(back) ?? dayRate
+    if ((covered && !r1) || (s.amount_base > covered && !r2)) return null
+    if (own && covered) own.base -= covered // следующий возврат гасит уже остаток
+    if (own && covered && r1) own.to -= covered * r1
+    outS.push({ ...s, amount_base: Math.round(covered * (r1 ?? 0) + (s.amount_base - covered) * (r2 ?? 0)) })
+  }
+  return { expenses: outE, settlements: outS }
 }

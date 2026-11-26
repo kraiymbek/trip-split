@@ -1,7 +1,7 @@
 // Сквозная проверка «кто кому должен» на локальном Supabase с 4 участниками.
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { describe, expect, it } from 'vitest'
-import { computeBalances, simplifyDebts, splitEqual, type ExpenseLike } from './balance'
+import { computeBalances, pairwiseDebts, splitEqual, type ExpenseLike } from './balance'
 
 const URL = 'http://127.0.0.1:54321'
 // ANON=… SERVICE=… npx vitest run src/lib/balance.e2e.test.ts (ключи — из `npx supabase status`)
@@ -85,11 +85,10 @@ describe.skipIf(!ANON)('кто кому должен — 4 участника, �
         const memberIds = m.data.map((r) => (r.profiles as unknown as { id: string }).id)
         const b = computeBalances(memberIds, e.data as ExpenseLike[], s.data)
         expect(b, `балансы у ${people[k].name}`).toEqual(net)
-        const t = simplifyDebts(b)
+        const t = pairwiseDebts(e.data as ExpenseLike[], s.data)
         const after = { ...b }
         for (const x of t) { after[x.from] += x.amount; after[x.to] -= x.amount }
         expect(Object.values(after).every((v) => v === 0)).toBe(true)
-        expect(t.length).toBeLessThanOrEqual(3)
         const nm = (x: string) => people[id.indexOf(x)].name
         views.push(t.map((x) => `${nm(x.from)}→${nm(x.to)} ${x.amount / 100}`).join(', '))
       }

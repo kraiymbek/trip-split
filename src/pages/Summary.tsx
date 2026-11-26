@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTripCtx } from './TripLayout'
-import { breakdownByMethod, computeStats, pairwiseDebts, simplifyDebts, type Transfer } from '../lib/balance'
-import { CURRENCIES, convert, formatMoney, minorToInput, moneyError, parseMoney } from '../lib/money'
-import { fetchRate } from '../lib/rates'
+import { breakdownByMethod, computeStats, convertTrip, daysToConvert, pairwiseDebts, type Transfer } from '../lib/balance'
+import { CURRENCIES, formatMoney, minorToInput, moneyError, parseMoney } from '../lib/money'
+import { crossRate, dmy, nbkRates } from '../lib/rates'
 import { errMsg, supabase } from '../lib/supabase'
 import { discard, enqueue, isNetworkError, uuid } from '../lib/outbox'
 import { BANKS, METHODS, methodLabel, type PayMethod, type Profile } from '../types'
@@ -12,7 +12,6 @@ import { canModify } from '../lib/rights'
 import { Avatar, Button, Card, Chip, ErrorBox, Label } from '../components/ui'
 import { MethodIcon } from '../components/PayPicker'
 
-const SIMPLE_KEY = 'ts:simple-debts'
 const lsGet = (k: string) => {
   try {
     return localStorage.getItem(k)
@@ -34,52 +33,59 @@ export default function Summary() {
   const { trip, members, memberById, expenses, settlements, me, reload } = useTripCtx()
   const base = trip.base_currency
   const alt = base === 'KZT' ? 'THB' : 'KZT'
-  // в какой валюте смотреть итоги: базовая поездки или тенге/баты по сегодняшнему курсу
+  // в какой валюте смотреть итоги: базовая поездки или тенге/баты — каждый расход по курсу Нацбанка РК на день оплаты
   const curKey = `ts:sum-cur:${trip.id}`
   const [view, setView] = useState(() => (lsGet(curKey) === alt ? alt : base))
-  const [altRate, setAltRate] = useState<number | null>(null)
+  const [dayRates, setDayRates] = useState<Record<string, { date: string; kzt: Record<string, number> }>>({})
   const [rateFailed, setRateFailed] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const [error, setError] = useState('')
 
+  const days = useMemo(() => daysToConvert(expenses, settlements), [expenses, settlements])
+  const missing = days.filter((d) => !dayRates[d])
   useEffect(() => {
-    if (view !== alt || altRate !== null || rateFailed) return
+    if (view !== alt || rateFailed || !missing.length) return
     let cancelled = false
-    fetchRate(base, alt).then((r) => {
+    Promise.all(missing.map((d) => nbkRates(d))).then((res) => {
       if (cancelled) return
-      if (r) setAltRate(r)
-      else setRateFailed(true)
+      // удачные дни сохраняем в любом случае — при следующей попытке грузятся только недостающие
+      const ok = Object.fromEntries(missing.flatMap((d, i) => (res[i] ? [[d, res[i]!]] : [])))
+      if (Object.keys(ok).length) setDayRates((prev) => ({ ...prev, ...ok }))
+      if (res.some((r) => !r)) setRateFailed(true)
     })
     return () => {
       cancelled = true
     }
-  }, [view, alt, altRate, rateFailed, base])
+  }, [view, alt, rateFailed, missing.join(',')]) // eslint-disable-line react-hooks/exhaustive-deps
   const pickView = (c: string) => {
     setView(c)
     setRateFailed(false)
     lsSet(curKey, c)
   }
-  // пока курс не пришёл (или не удалось) — показываем в базовой валюте
-  const shown = view === alt && altRate ? alt : base
-  // пересчёт примерный — без копеек, чтобы не было ложной точности
-  const fm = (minor: number) =>
-    shown === base ? formatMoney(minor, base) : formatMoney(Math.round(convert(minor, altRate!) / 100) * 100, alt)
+  const converted = useMemo(
+    () =>
+      view === alt && !missing.length
+        ? convertTrip(expenses, settlements, base, alt, (d) => dayRates[d]?.kzt)
+        : null,
+    [view, alt, missing.length, expenses, settlements, base, dayRates],
+  )
+  // пока курсы не пришли (или их нет) — показываем в базовой валюте
+  const shown = converted ? alt : base
+  const data = useMemo(() => converted ?? { expenses, settlements }, [converted, expenses, settlements])
+  const fm = (minor: number) => formatMoney(minor, shown)
+  // какие курсы использованы: дата → 1 base = X alt
+  const usedRates = converted
+    ? [...new Map(days.map((d) => dayRates[d]).map((r) => [r.date, crossRate(r.kzt, base, alt)!])).entries()]
+    : []
+  const rateFmt = (r: number) => r.toLocaleString('ru-RU', { maximumFractionDigits: 4 })
 
   const memberIds = members.map((m) => m.id)
-  const stats = useMemo(() => computeStats(memberIds, expenses, settlements), [memberIds.join(','), expenses, settlements]) // eslint-disable-line react-hooks/exhaustive-deps
-  // «по парам» — кто за кого платил; «меньше переводов» — то же самое, сжатое до минимума переводов
-  const [simple, setSimple] = useState(() => lsGet(SIMPLE_KEY) === '1')
-  const transfers = useMemo(
-    () =>
-      simple
-        ? simplifyDebts(Object.fromEntries(Object.entries(stats).map(([id, s]) => [id, s.balance])))
-        : pairwiseDebts(expenses, settlements),
-    [simple, stats, expenses, settlements],
-  )
-  const byMethod = useMemo(() => breakdownByMethod(expenses), [expenses])
-  const total = expenses.reduce((s, e) => s + e.amount_base, 0)
+  const stats = useMemo(() => computeStats(memberIds, data.expenses, data.settlements), [memberIds.join(','), data]) // eslint-disable-line react-hooks/exhaustive-deps
+  // по каждой паре: кто за кого платил, встречные долги взаимозачтены
+  const transfers = useMemo(() => pairwiseDebts(data.expenses, data.settlements), [data])
+  const byMethod = useMemo(() => breakdownByMethod(data.expenses), [data])
+  const total = data.expenses.reduce((s, e) => s + e.amount_base, 0)
 
-  const money = (minor: number) => fm(minor)
   const name = (id: string) => (id === me ? 'Я' : (memberById[id]?.name ?? 'Бывший участник'))
 
   const myBalance = stats[me]?.balance ?? 0
@@ -105,12 +111,25 @@ export default function Summary() {
           ))}
         </div>
         {view === alt && (
-          <div className="text-xs text-muted-foreground" aria-live="polite">
-            {altRate
-              ? `Примерно, по курсу на сегодня: 1 ${CURRENCIES[base]?.symbol ?? base} = ${+altRate.toPrecision(4)} ${CURRENCIES[alt]?.symbol ?? alt}`
-              : rateFailed
-                ? `Не удалось получить курс — показываю в ${base}`
-                : 'Загружаю курс…'}
+          <div className="text-right text-xs text-muted-foreground" aria-live="polite">
+            {converted ? (
+              <details>
+                <summary className="cursor-pointer">Каждая оплата — по курсу Нацбанка РК на её день</summary>
+                <ul className="mt-1 space-y-0.5 tabular">
+                  {usedRates.map(([d, r]) => (
+                    <li key={d}>
+                      {dmy(d)}: 1 {CURRENCIES[base]?.symbol ?? base} = {rateFmt(r)} {CURRENCIES[alt]?.symbol ?? alt}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : rateFailed ? (
+              `Не удалось получить курс Нацбанка РК — показываю в ${base}`
+            ) : !missing.length ? (
+              `У Нацбанка РК нет курса для одной из валют расходов — показываю в ${base}`
+            ) : (
+              'Загружаю курсы Нацбанка РК…'
+            )}
           </div>
         )}
       </div>
@@ -123,34 +142,13 @@ export default function Summary() {
           {myBalance > 0 ? 'Тебе должны' : myBalance < 0 ? 'Ты должен' : 'Ты в расчёте'}
         </div>
         <div className="mt-1 flex justify-center text-4xl font-bold tracking-tight tabular">
-          {myBalance === 0 ? <PartyPopper className="size-9 text-primary" aria-label="Все в расчёте" /> : money(Math.abs(myBalance))}
+          {myBalance === 0 ? <PartyPopper className="size-9 text-primary" aria-label="Все в расчёте" /> : fm(Math.abs(myBalance))}
         </div>
       </Card>
 
       {/* переводы */}
       <section>
-        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-          <Label>Кто кому переводит</Label>
-          <div className="flex rounded-lg bg-muted p-1 text-sm font-semibold" role="group" aria-label="Как считать переводы">
-            {([false, true] as const).map((v) => (
-              <button
-                key={String(v)}
-                type="button"
-                aria-pressed={simple === v}
-                onClick={() => {
-                  setSimple(v)
-                  lsSet(SIMPLE_KEY, v ? '1' : '0')
-                }}
-                className={`min-h-10 cursor-pointer rounded-md px-3 ${simple === v ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}
-              >
-                {v ? 'Меньше переводов' : 'По парам'}
-              </button>
-            ))}
-          </div>
-        </div>
-        {simple && transfers.length > 0 && (
-          <p className="mb-2 text-xs text-muted-foreground">Долги сведены к минимуму переводов — платить можно не тому, кто за тебя платил.</p>
-        )}
+        <Label>Кто кому переводит</Label>
         {transfers.length === 0 ? (
           <Card className="text-center text-muted-foreground">Все в расчёте — переводить никому ничего не нужно</Card>
         ) : (
@@ -162,9 +160,10 @@ export default function Summary() {
                 fromName={name(t.from)}
                 toName={name(t.to)}
                 highlight={t.from === me || t.to === me}
-                open={open === `${t.from}-${t.to}`}
+                open={!converted && open === `${t.from}-${t.to}`}
+                canMark={!converted}
                 onToggle={() => setOpen(open === `${t.from}-${t.to}` ? null : `${t.from}-${t.to}`)}
-                money={money}
+                money={fm}
                 base={base}
                 onDone={async (amount, method, bank) => {
                   const row = { id: uuid(), trip_id: trip.id, from_user: t.from, to_user: t.to, amount_base: amount, method, bank }
@@ -189,6 +188,9 @@ export default function Summary() {
               />
             ))}
           </Card>
+        )}
+        {converted && transfers.length > 0 && (
+          <p className="mt-2 text-xs text-muted-foreground">Отметить возврат можно в {base} — там точная сумма долга.</p>
         )}
         <div className="mt-2">
           <ErrorBox>{error}</ErrorBox>
@@ -268,11 +270,11 @@ export default function Summary() {
 
 
       {/* история возвратов */}
-      {settlements.length > 0 && (
+      {data.settlements.length > 0 && (
         <section>
           <Label>Возвраты долгов</Label>
           <Card className="divide-y divide-border !p-0">
-            {settlements.map((s) => (
+            {data.settlements.map((s) => (
               <div key={s.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                 <div className="min-w-0 flex-1">
                   <div>
@@ -330,6 +332,7 @@ function TransferRow(props: {
   highlight: boolean
   open: boolean
   onToggle: () => void
+  canMark: boolean // в пересчитанной валюте отмечать возврат нельзя — долг хранится в базовой
   money: (m: number) => ReactNode
   base: string
   onDone: (amount: number, method: PayMethod, bank: string | null) => Promise<void>
@@ -344,9 +347,9 @@ function TransferRow(props: {
   return (
     <div className={props.highlight ? 'bg-amber-50/60' : ''}>
       <button
-        onClick={props.onToggle}
-        aria-expanded={open}
-        className="flex min-h-14 w-full cursor-pointer items-center gap-2 px-4 py-3 text-left transition-colors hover:bg-accent/40"
+        onClick={props.canMark ? props.onToggle : undefined}
+        aria-expanded={props.canMark ? open : undefined}
+        className={`flex min-h-14 w-full items-center gap-2 px-4 py-3 text-left ${props.canMark ? 'cursor-pointer transition-colors hover:bg-accent/40' : 'cursor-default'}`}
       >
         <Avatar p={props.fromP} size={28} />
         <span className="font-medium">{props.fromName}</span>

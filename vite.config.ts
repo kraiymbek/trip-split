@@ -40,5 +40,15 @@ export default defineConfig({
       },
     }),
   ],
+  // курсы Нацбанка РК: сайт не отдаёт CORS — в dev проксируем, на Vercel то же делает rewrite в vercel.json
+  server: {
+    proxy: {
+      '/api/nbk': {
+        target: 'https://nationalbank.kz',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/api\/nbk/, '/rss/get_rates.cfm'),
+      },
+    },
+  },
   test: { environment: 'node' },
 })

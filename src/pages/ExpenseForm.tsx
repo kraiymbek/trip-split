@@ -12,7 +12,7 @@ import {
   parseMoney,
   parseRate,
 } from '../lib/money'
-import { fetchRate } from '../lib/rates'
+import { fetchRateInfo, rateSourceLabel } from '../lib/rates'
 import { enqueue, uuid } from '../lib/outbox'
 import type { PayMethod } from '../types'
 import { PayPicker, lastBank } from '../components/PayPicker'
@@ -62,6 +62,8 @@ export default function ExpenseForm() {
   const [currency, setCurrency] = useState(editing?.currency ?? lsGet(curKey) ?? base)
   const [rateStr, setRateStr] = useState(editing ? String(editing.rate) : '1')
   const [rateState, setRateState] = useState<'idle' | 'loading' | 'failed'>('idle')
+  // откуда курс: подставлен (Нацбанк/рыночный) или введён вручную; у открытого старого расхода — не знаем
+  const [rateNote, setRateNote] = useState<string | null>(null)
   const [title, setTitle] = useState(editing?.title ?? '')
   const [note, setNote] = useState(editing?.note ?? '')
   const [paidBy, setPaidBy] = useState(editing?.paid_by ?? me)
@@ -91,12 +93,16 @@ export default function ExpenseForm() {
   const [otherCur, setOtherCur] = useState(!QUICK_CURRENCIES.includes(currency) && currency !== base)
 
   // курс: подтягиваем автоматически при смене валюты/даты (но не при открытии старого расхода)
-  const skipRate = useRef(Boolean(editing))
+  // у открытого расхода валюта и дата как при сохранении — оставляем его курс (не перезаписываем сегодняшним)
+  const savedRate = editing ? { currency: editing.currency, date: toDateInput(new Date(editing.spent_at)), rate: editing.rate } : null
   useEffect(() => {
-    if (skipRate.current) {
-      skipRate.current = false
+    if (savedRate && currency === savedRate.currency && date === savedRate.date) {
+      setRateStr(String(savedRate.rate))
+      setRateNote(null)
+      setRateState('idle')
       return
     }
+    setRateNote(null)
     if (currency === base) {
       setRateStr('1')
       setRateState('idle')
@@ -104,17 +110,19 @@ export default function ExpenseForm() {
     }
     let cancelled = false
     setRateState('loading')
-    fetchRate(currency, base, date).then((r) => {
+    // курс на день оплаты — Нацбанк РК, если недоступен — рыночный
+    fetchRateInfo(currency, base, date).then((r) => {
       if (cancelled) return
       if (r) {
-        setRateStr(String(+r.toPrecision(6)))
+        setRateStr(String(+r.rate.toPrecision(6)))
+        setRateNote(`Это ${rateSourceLabel(r)}`)
         setRateState('idle')
       } else setRateState('failed')
     })
     return () => {
       cancelled = true
     }
-  }, [currency, date, base])
+  }, [currency, date, base]) // eslint-disable-line react-hooks/exhaustive-deps -- savedRate фиксирован на время жизни формы
 
   const amount = parseMoney(amountStr)
   const rate = currency === base ? 1 : (parseRate(rateStr) ?? 0)
@@ -305,7 +313,10 @@ export default function ExpenseForm() {
                 className="h-9 w-28 rounded-lg bg-card px-2 border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 inputMode="decimal"
                 value={rateStr}
-                onChange={(e) => setRateStr(e.target.value)}
+                onChange={(e) => {
+                  setRateStr(e.target.value)
+                  setRateNote('Курс введён вручную')
+                }}
               />
               <span className="text-muted-foreground">{base}</span>
               {rateState === 'loading' && (
@@ -321,6 +332,7 @@ export default function ExpenseForm() {
               <div className="mt-1 text-xs text-muted-foreground">
                 1 {base} = {+(1 / rate).toPrecision(5)} {currency}
                 {amountBase ? ` · итого ${formatMoney(amountBase, base)}` : ''}
+                {rateNote && <div>{rateNote}</div>}
               </div>
             )}
           </div>

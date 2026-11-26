@@ -8,7 +8,6 @@ import {
   computeBalances,
   computeStats,
   pairwiseDebts,
-  simplifyDebts,
   splitEqual,
   type ExpenseLike,
 } from './balance'
@@ -36,7 +35,7 @@ describe('balances & debts', () => {
   it('один заплатил за всех поровну', () => {
     const b = computeBalances(members, [exp('ali', 900)], [])
     expect(b).toEqual({ ali: 600, bek: -300, dana: -300 })
-    expect(simplifyDebts(b)).toEqual([
+    expect(pairwiseDebts([exp('ali', 900)], [])).toEqual([
       { from: 'bek', to: 'ali', amount: 300 },
       { from: 'dana', to: 'ali', amount: 300 },
     ])
@@ -57,19 +56,23 @@ describe('balances & debts', () => {
   })
 
   it('возврат долга обнуляет баланс', () => {
-    const b = computeBalances(members, [exp('ali', 900)], [
+    const back = [
       { from_user: 'bek', to_user: 'ali', amount_base: 300 },
       { from_user: 'dana', to_user: 'ali', amount_base: 300 },
-    ])
+    ]
+    const b = computeBalances(members, [exp('ali', 900)], back)
     expect(b).toEqual({ ali: 0, bek: 0, dana: 0 })
-    expect(simplifyDebts(b)).toEqual([])
+    expect(pairwiseDebts([exp('ali', 900)], back)).toEqual([])
   })
 
-  it('взаимные траты сворачиваются в минимум переводов', () => {
-    const b = computeBalances(members, [exp('ali', 900), exp('bek', 600), exp('dana', 300)], [])
-    expect(sum(Object.values(b))).toBe(0)
-    const t = simplifyDebts(b)
-    expect(t).toEqual([{ from: 'dana', to: 'ali', amount: 300 }])
+  it('взаимные траты зачитываются внутри каждой пары', () => {
+    const list = [exp('ali', 900), exp('bek', 600), exp('dana', 300)]
+    expect(sum(Object.values(computeBalances(members, list, [])))).toBe(0)
+    expect(pairwiseDebts(list, [])).toEqual([
+      { from: 'dana', to: 'ali', amount: 200 },
+      { from: 'bek', to: 'ali', amount: 100 },
+      { from: 'dana', to: 'bek', amount: 100 },
+    ])
   })
 
   it('сумма балансов всегда 0 на случайных данных', () => {
@@ -83,8 +86,8 @@ describe('balances & debts', () => {
     })
     const b = computeBalances(ppl, expenses, [])
     expect(sum(Object.values(b))).toBe(0)
-    const transfers = simplifyDebts(b)
-    expect(transfers.length).toBeLessThanOrEqual(ppl.length - 1)
+    const transfers = pairwiseDebts(expenses, [])
+    expect(transfers.length).toBeLessThanOrEqual((ppl.length * (ppl.length - 1)) / 2) // не больше одного на пару
     // применяем переводы — все должны выйти в 0
     const after = { ...b }
     for (const t of transfers) {
@@ -110,11 +113,13 @@ describe('balances & debts', () => {
     const settlements = [{ from_user: 'вика', to_user: 'аня', amount_base: 50000 }]
     const b = computeBalances(ppl, expenses, settlements)
     expect(b).toEqual({ аня: 175000, боря: 37345, вика: -137345, гена: -75000 })
-    const t = simplifyDebts(b)
-    expect(t).toEqual([
-      { from: 'вика', to: 'аня', amount: 137345 },
-      { from: 'гена', to: 'аня', amount: 37655 },
-      { from: 'гена', to: 'боря', amount: 37345 },
+    expect(pairwiseDebts(expenses, settlements)).toEqual([
+      { from: 'вика', to: 'боря', amount: 112345 },
+      { from: 'боря', to: 'аня', amount: 100000 },
+      { from: 'гена', to: 'аня', amount: 75000 }, // 1000 Ане − 250 Ани за Гену
+      { from: 'гена', to: 'боря', amount: 25000 },
+      { from: 'вика', to: 'гена', amount: 25000 },
+      // Вика ↔ Аня: 1000 − 500 (Вика за Аню) − 500 возврата = 0 — строки нет
     ])
     // строка участника: заплатил − траты + вернул − получил = баланс
     const s = computeStats(ppl, expenses, settlements)
@@ -136,9 +141,7 @@ describe('balances & debts', () => {
       { from: 'вика', to: 'боря', amount: 8000 }, // 10000 за Борю − 2000 за Вику
       { from: 'гена', to: 'вика', amount: 2000 },
     ])
-    // упрощённо — все только «мне», а долг Вики Боре пропадает
-    expect(simplifyDebts(computeBalances(ppl, expenses, settlements)).every((x) => x.to === 'я')).toBe(true)
-    // обе схемы приводят к одним и тем же итогам
+    // после всех переводов каждый в нуле
     const after = computeBalances(ppl, expenses, settlements)
     for (const x of t) { after[x.from] += x.amount; after[x.to] -= x.amount }
     expect(Object.values(after).every((v) => v === 0)).toBe(true)
