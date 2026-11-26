@@ -130,6 +130,25 @@ export function simplifyDebts(balances: Record<string, number>): Transfer[] {
   return out
 }
 
+/** Долги по каждой паре: кто за кого платил, минус возвраты между ними; встречные долги взаимозачитываются. */
+export function pairwiseDebts(expenses: ExpenseLike[], settlements: SettlementLike[]): Transfer[] {
+  const net = new Map<string, number>() // ключ «a|b» при a < b: > 0 — a должен b, < 0 — b должен a
+  const add = (debtor: string, creditor: string, v: number) => {
+    if (debtor === creditor || !v) return
+    const [k, sign] = debtor < creditor ? [`${debtor}|${creditor}`, 1] : [`${creditor}|${debtor}`, -1]
+    net.set(k, (net.get(k) ?? 0) + sign * v)
+  }
+  for (const e of expenses) for (const s of e.shares) add(s.user_id, e.paid_by, s.share_base)
+  for (const s of settlements) add(s.to_user, s.from_user, s.amount_base) // вернул — значит, долг меньше
+  const out: Transfer[] = []
+  for (const [k, v] of net) {
+    const [a, b] = k.split('|')
+    if (v > 0) out.push({ from: a, to: b, amount: v })
+    else if (v < 0) out.push({ from: b, to: a, amount: -v })
+  }
+  return out.sort((x, y) => y.amount - x.amount)
+}
+
 export type MethodTotals = Record<PayMethod, number>
 
 const emptyTotals = (): MethodTotals => ({ card: 0, cash: 0 })

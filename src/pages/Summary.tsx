@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTripCtx } from './TripLayout'
-import { breakdownByMethod, computeStats, simplifyDebts, type Transfer } from '../lib/balance'
+import { breakdownByMethod, computeStats, pairwiseDebts, simplifyDebts, type Transfer } from '../lib/balance'
 import { CURRENCIES, convert, formatMoney, minorToInput, moneyError, parseMoney } from '../lib/money'
 import { fetchRate } from '../lib/rates'
 import { errMsg, supabase } from '../lib/supabase'
@@ -12,38 +12,74 @@ import { canModify } from '../lib/rights'
 import { Avatar, Button, Card, Chip, ErrorBox, Label } from '../components/ui'
 import { MethodIcon } from '../components/PayPicker'
 
+const SIMPLE_KEY = 'ts:simple-debts'
+const lsGet = (k: string) => {
+  try {
+    return localStorage.getItem(k)
+  } catch {
+    return null
+  }
+}
+const lsSet = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v)
+  } catch {
+    /* private mode */
+  }
+}
+
 const dateFmt = new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
 
 export default function Summary() {
   const { trip, members, memberById, expenses, settlements, me, reload } = useTripCtx()
   const base = trip.base_currency
   const alt = base === 'KZT' ? 'THB' : 'KZT'
+  // в какой валюте смотреть итоги: базовая поездки или тенге/баты по сегодняшнему курсу
+  const curKey = `ts:sum-cur:${trip.id}`
+  const [view, setView] = useState(() => (lsGet(curKey) === alt ? alt : base))
   const [altRate, setAltRate] = useState<number | null>(null)
-  const [showAlt, setShowAlt] = useState(false)
+  const [rateFailed, setRateFailed] = useState(false)
   const [open, setOpen] = useState<string | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    if (showAlt && altRate === null) fetchRate(base, alt).then(setAltRate)
-  }, [showAlt, altRate, base, alt])
+    if (view !== alt || altRate !== null || rateFailed) return
+    let cancelled = false
+    fetchRate(base, alt).then((r) => {
+      if (cancelled) return
+      if (r) setAltRate(r)
+      else setRateFailed(true)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [view, alt, altRate, rateFailed, base])
+  const pickView = (c: string) => {
+    setView(c)
+    setRateFailed(false)
+    lsSet(curKey, c)
+  }
+  // пока курс не пришёл (или не удалось) — показываем в базовой валюте
+  const shown = view === alt && altRate ? alt : base
+  // пересчёт примерный — без копеек, чтобы не было ложной точности
+  const fm = (minor: number) =>
+    shown === base ? formatMoney(minor, base) : formatMoney(Math.round(convert(minor, altRate!) / 100) * 100, alt)
 
   const memberIds = members.map((m) => m.id)
   const stats = useMemo(() => computeStats(memberIds, expenses, settlements), [memberIds.join(','), expenses, settlements]) // eslint-disable-line react-hooks/exhaustive-deps
+  // «по парам» — кто за кого платил; «меньше переводов» — то же самое, сжатое до минимума переводов
+  const [simple, setSimple] = useState(() => lsGet(SIMPLE_KEY) === '1')
   const transfers = useMemo(
-    () => simplifyDebts(Object.fromEntries(Object.entries(stats).map(([id, s]) => [id, s.balance]))),
-    [stats],
+    () =>
+      simple
+        ? simplifyDebts(Object.fromEntries(Object.entries(stats).map(([id, s]) => [id, s.balance])))
+        : pairwiseDebts(expenses, settlements),
+    [simple, stats, expenses, settlements],
   )
   const byMethod = useMemo(() => breakdownByMethod(expenses), [expenses])
   const total = expenses.reduce((s, e) => s + e.amount_base, 0)
 
-  const money = (minor: number) => (
-    <>
-      {formatMoney(minor, base)}
-      {showAlt && altRate && (
-        <span className="ml-1 text-[0.8em] font-normal opacity-60">≈ {formatMoney(convert(minor, altRate), alt)}</span>
-      )}
-    </>
-  )
+  const money = (minor: number) => fm(minor)
   const name = (id: string) => (id === me ? 'Я' : (memberById[id]?.name ?? 'Бывший участник'))
 
   const myBalance = stats[me]?.balance ?? 0
@@ -60,10 +96,23 @@ export default function Summary() {
 
   return (
     <div className="space-y-5 pb-6">
-      <div className="flex justify-end">
-        <Chip active={showAlt} onClick={() => setShowAlt((v) => !v)}>
-          {CURRENCIES[alt].flag} Показать в {alt}
-        </Chip>
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex gap-2" role="group" aria-label="Валюта итогов">
+          {[base, alt].map((c) => (
+            <Chip key={c} active={view === c} onClick={() => pickView(c)}>
+              {CURRENCIES[c]?.flag} {c}
+            </Chip>
+          ))}
+        </div>
+        {view === alt && (
+          <div className="text-xs text-muted-foreground" aria-live="polite">
+            {altRate
+              ? `Примерно, по курсу на сегодня: 1 ${CURRENCIES[base]?.symbol ?? base} = ${+altRate.toPrecision(4)} ${CURRENCIES[alt]?.symbol ?? alt}`
+              : rateFailed
+                ? `Не удалось получить курс — показываю в ${base}`
+                : 'Загружаю курс…'}
+          </div>
+        )}
       </div>
 
       {/* мой итог */}
@@ -80,7 +129,28 @@ export default function Summary() {
 
       {/* переводы */}
       <section>
-        <Label>Кто кому переводит</Label>
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+          <Label>Кто кому переводит</Label>
+          <div className="flex rounded-lg bg-muted p-1 text-sm font-semibold" role="group" aria-label="Как считать переводы">
+            {([false, true] as const).map((v) => (
+              <button
+                key={String(v)}
+                type="button"
+                aria-pressed={simple === v}
+                onClick={() => {
+                  setSimple(v)
+                  lsSet(SIMPLE_KEY, v ? '1' : '0')
+                }}
+                className={`min-h-10 cursor-pointer rounded-md px-3 ${simple === v ? 'bg-card shadow-sm' : 'text-muted-foreground'}`}
+              >
+                {v ? 'Меньше переводов' : 'По парам'}
+              </button>
+            ))}
+          </div>
+        </div>
+        {simple && transfers.length > 0 && (
+          <p className="mb-2 text-xs text-muted-foreground">Долги сведены к минимуму переводов — платить можно не тому, кто за тебя платил.</p>
+        )}
         {transfers.length === 0 ? (
           <Card className="text-center text-muted-foreground">Все в расчёте — переводить никому ничего не нужно</Card>
         ) : (
@@ -137,14 +207,16 @@ export default function Summary() {
                 <div className="min-w-0 flex-1">
                   <div className="font-medium">{name(m.id)}</div>
                   <div className="text-xs text-muted-foreground">
-                    заплатил {formatMoney(s.paid, base)} · его траты {formatMoney(s.consumed, base)}
+                    заплатил {fm(s.paid)} · его траты {fm(s.consumed)}
+                    {s.settledOut > 0 && <> · вернул {fm(s.settledOut)}</>}
+                    {s.settledIn > 0 && <> · получил {fm(s.settledIn)}</>}
                   </div>
                 </div>
                 <div
                   className={`text-right font-semibold tabular ${s.balance > 0 ? 'text-primary' : s.balance < 0 ? 'text-negative' : 'text-muted-foreground'}`}
                 >
                   {s.balance > 0 ? '+' : s.balance < 0 ? '−' : ''}
-                  {formatMoney(Math.abs(s.balance), base)}
+                  {fm(Math.abs(s.balance))}
                 </div>
               </div>
             )
@@ -154,9 +226,9 @@ export default function Summary() {
 
       {/* способы оплаты */}
       <section>
-        <Label>Чем платили · всего {formatMoney(total, base)}</Label>
+        <Label>Чем платили · всего {fm(total)}</Label>
         <Card className="space-y-3">
-          <Bar m="card" label="Карта" value={byMethod.total.card} total={total} base={base} />
+          <Bar m="card" label="Карта" value={byMethod.total.card} total={total} fm={fm} />
           {BANKS.filter((b) => byMethod.byBank[b.id]).length > 0 && (
             <div className="space-y-1 border-l-2 border-border pl-3">
               {BANKS.filter((b) => byMethod.byBank[b.id]).map((b) => (
@@ -165,12 +237,12 @@ export default function Summary() {
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: b.color }} />
                     {b.label}
                   </span>
-                  <span className="text-muted-foreground">{formatMoney(byMethod.byBank[b.id], base)}</span>
+                  <span className="text-muted-foreground">{fm(byMethod.byBank[b.id])}</span>
                 </div>
               ))}
             </div>
           )}
-          <Bar m="cash" label="Наличные" value={byMethod.total.cash} total={total} base={base} />
+          <Bar m="cash" label="Наличные" value={byMethod.total.cash} total={total} fm={fm} />
           {members.some((m) => byMethod.byPayer[m.id]) && (
             <div className="border-t border-border pt-3 text-sm">
               {members
@@ -183,7 +255,7 @@ export default function Summary() {
                         .map((x) => (
                           <span key={x.id} className="ml-2 inline-flex items-center gap-1 tabular">
                             <MethodIcon m={x.id} className="size-3.5" />
-                            {formatMoney(byMethod.byPayer[m.id][x.id], base)}
+                            {fm(byMethod.byPayer[m.id][x.id])}
                           </span>
                         ))}
                     </span>
@@ -204,7 +276,7 @@ export default function Summary() {
               <div key={s.id} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                 <div className="min-w-0 flex-1">
                   <div>
-                    {name(s.from_user)} → {name(s.to_user)}: <b>{formatMoney(s.amount_base, base)}</b>
+                    {name(s.from_user)} → {name(s.to_user)}: <b>{fm(s.amount_base)}</b>
                   </div>
                   <div className="text-xs text-muted-foreground">
                     {s.pending && <Clock className="mr-1 inline size-3 -translate-y-px text-sky-600" aria-label="Ждёт отправки" />}
@@ -229,7 +301,7 @@ export default function Summary() {
   )
 }
 
-function Bar({ m, label, value, total, base }: { m: PayMethod; label: string; value: number; total: number; base: string }) {
+function Bar({ m, label, value, total, fm }: { m: PayMethod; label: string; value: number; total: number; fm: (minor: number) => string }) {
   const pct = total ? Math.round((value / total) * 100) : 0
   return (
     <div>
@@ -239,7 +311,7 @@ function Bar({ m, label, value, total, base }: { m: PayMethod; label: string; va
           {label}
         </span>
         <span className="font-medium tabular">
-          {formatMoney(value, base)} <span className="text-muted-foreground">· {pct}%</span>
+          {fm(value)} <span className="text-muted-foreground">· {pct}%</span>
         </span>
       </div>
       <div className="h-2 overflow-hidden rounded-full bg-muted" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>

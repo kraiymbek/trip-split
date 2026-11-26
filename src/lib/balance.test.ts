@@ -7,6 +7,7 @@ import {
   computeWallet,
   computeBalances,
   computeStats,
+  pairwiseDebts,
   simplifyDebts,
   splitEqual,
   type ExpenseLike,
@@ -90,6 +91,56 @@ describe('balances & debts', () => {
       after[t.from] += t.amount
       after[t.to] -= t.amount
     }
+    expect(Object.values(after).every((v) => v === 0)).toBe(true)
+  })
+
+  it('4 участника: разные составы, свои суммы, платёж за другого, частичный возврат', () => {
+    const ppl = ['аня', 'боря', 'вика', 'гена']
+    const e = (paid_by: string, amount: number, ids: string[]): ExpenseLike => ({
+      paid_by, amount_base: amount, method: 'card', shares: splitEqual(amount, ids),
+    })
+    const expenses: ExpenseLike[] = [
+      e('аня', 400000, ppl),
+      e('боря', 300000, ['боря', 'вика', 'гена']),
+      e('вика', 100000, ['аня', 'вика']),
+      { paid_by: 'гена', amount_base: 200000, method: 'cash', shares: [{ user_id: 'гена', share_base: 150000 }, { user_id: 'боря', share_base: 50000 }] },
+      e('гена', 99999, ppl), // с остатком: 25000 + 3 × 24999.67 → 25000, 25000, 25000, 24999
+      e('боря', 12345, ['вика']),
+    ]
+    const settlements = [{ from_user: 'вика', to_user: 'аня', amount_base: 50000 }]
+    const b = computeBalances(ppl, expenses, settlements)
+    expect(b).toEqual({ аня: 175000, боря: 37345, вика: -137345, гена: -75000 })
+    const t = simplifyDebts(b)
+    expect(t).toEqual([
+      { from: 'вика', to: 'аня', amount: 137345 },
+      { from: 'гена', to: 'аня', amount: 37655 },
+      { from: 'гена', to: 'боря', amount: 37345 },
+    ])
+    // строка участника: заплатил − траты + вернул − получил = баланс
+    const s = computeStats(ppl, expenses, settlements)
+    for (const x of Object.values(s)) expect(x.paid - x.consumed + x.settledOut - x.settledIn).toBe(x.balance)
+  })
+
+  it('по парам: видно, кто за кого платил, встречные долги зачитываются, возвраты уменьшают долг', () => {
+    const ppl = ['я', 'боря', 'вика', 'гена']
+    const e = (paid_by: string, amount: number, ids: string[]): ExpenseLike => ({
+      paid_by, amount_base: amount, method: 'card', shares: splitEqual(amount, ids),
+    })
+    const expenses = [e('я', 400000, ppl), e('боря', 20000, ['боря', 'вика']), e('вика', 6000, ['боря', 'вика', 'гена'])]
+    const settlements = [{ from_user: 'гена', to_user: 'я', amount_base: 30000 }]
+    const t = pairwiseDebts(expenses, settlements)
+    expect(t).toEqual([
+      { from: 'боря', to: 'я', amount: 100000 },
+      { from: 'вика', to: 'я', amount: 100000 },
+      { from: 'гена', to: 'я', amount: 70000 },
+      { from: 'вика', to: 'боря', amount: 8000 }, // 10000 за Борю − 2000 за Вику
+      { from: 'гена', to: 'вика', amount: 2000 },
+    ])
+    // упрощённо — все только «мне», а долг Вики Боре пропадает
+    expect(simplifyDebts(computeBalances(ppl, expenses, settlements)).every((x) => x.to === 'я')).toBe(true)
+    // обе схемы приводят к одним и тем же итогам
+    const after = computeBalances(ppl, expenses, settlements)
+    for (const x of t) { after[x.from] += x.amount; after[x.to] -= x.amount }
     expect(Object.values(after).every((v) => v === 0)).toBe(true)
   })
 

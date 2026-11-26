@@ -28,6 +28,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
   return children
 }
 
+// переход с одного расхода на другой (уведомление, тост) — новая форма, иначе в ней остаются поля прошлого расхода
+function ExpenseFormPerId() {
+  const { expenseId } = useParams()
+  return <ExpenseForm key={expenseId} />
+}
+
 export default function App() {
   if (!supabaseConfigured)
     return (
@@ -50,7 +56,7 @@ export default function App() {
           <Route path="/t/:tripId" element={<RequireAuth><TripLayoutPerTrip /></RequireAuth>}>
             <Route index element={<TripExpenses />} />
             <Route path="new" element={<ExpenseForm />} />
-            <Route path="e/:expenseId" element={<ExpenseForm key="edit" />} />
+            <Route path="e/:expenseId" element={<ExpenseFormPerId />} />
             <Route path="cash" element={<CashWallet />} />
             <Route path="summary" element={<Summary />} />
             <Route path="settings" element={<TripSettings />} />
